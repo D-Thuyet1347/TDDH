@@ -1,0 +1,7 @@
+{
+  "EXCEL_FILE": "Chuyen_Ton_Kho.xlsx",
+  "SERVER_NAME": "PRD_Upgrade",
+  "SAP_USER": "pp19",
+  "SAP_PASS": "nm.hrc22",
+  "DEFAULT_PLANT": "1600"
+}

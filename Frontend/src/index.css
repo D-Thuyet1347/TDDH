@@ -1,0 +1,117 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue','Dancing Script',
+    'Helvetica', 'Arial', sans-serif,
+    sans-serif;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+/* Thư viện antd */
+input.no-spinner::-webkit-inner-spin-button,
+input.no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+@keyframes heroImage {
+    from {
+        transform: scale(2.0);
+    }
+
+    to {
+        transform: scale(1);
+    }
+}
+input.no-spinner {
+  -moz-appearance: textfield;
+}
+.ant-picker-ok{
+  color: black;
+  border: none;
+  cursor: pointer;
+  margin-right: 10px;
+}
+.ant-picker-dropdown {
+  pointer-events: auto;
+}
+.ant-picker-dropdown .ant-picker-panel {
+  overscroll-behavior: none;
+}
+.ant-btn{
+  background-color: #f0f0f0;
+  border-radius: 5px;
+  border: none;
+  color: black;
+  cursor: pointer;
+}
+/* Hiệu ứng */
+@keyframes shakeM {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(3px); }
+  50% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+  100% { transform: translateX(0); }
+}
+
+.shake-loopm {
+  animation: shakeM 1.5s ease-in-out infinite;
+}
+.animate-up {
+  transform: translateY(-50px);
+  opacity: 0.5;
+}
+
+@keyframes shakeP {
+  0% { transform: rotate(-20deg); }
+  25% { transform: rotate(0); }
+  50% { transform: rotate(30deg); }
+  75% { transform: rotate(0); }
+  100% { transform: rotate(-20deg); }
+}
+
+.shake-loopp {
+  animation: shakeP 1.5s ease-in-out infinite;
+}
+@keyframes slideIn {
+  0% {
+    transform: translateY(100px); 
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0); 
+    opacity: 1;
+  }
+}
+/* Up-down */
+.back-to-top-btn {
+  background-color: #000;
+  color: #fff;
+  padding: 12px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.back-to-top-btn:hover {
+  background-color: #444;
+}
+
+.back-to-top-btn.slide-up {
+  transition: transform 0.5s ease-in-out;
+}
+.back-to-top-btn.slide-down {
+  transition: transform 0.5s ease-in-out;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
