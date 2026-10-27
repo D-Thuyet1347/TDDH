@@ -31,7 +31,7 @@ export const connectDB = async () => {
     const timeout = Number.parseInt(process.env.MONGODB_TIMEOUT_MS || "30000", 10);
 
     await mongoose.connect(uri, {
-      ...(process.env.MONGODB_DB ? { dbName: process.env.MONGODB_DB } : {}),
+      dbName: "hrc2_qc",
       serverSelectionTimeoutMS: Number.isInteger(timeout) && timeout > 0 ? timeout : 30000,
       connectTimeoutMS: Number.isInteger(timeout) && timeout > 0 ? timeout : 30000,
       

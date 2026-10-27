@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import ExportPage from './pages/ExportPage';
 import ReportsPage from './pages/ReportsPage';
 import DataPage from './pages/DataPage';
+import OrderDemandPage from './pages/OrderDemandPage';
 
 function App() {
   return (
@@ -20,7 +21,9 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/export" element={<ExportPage />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/orders" element={<OrderDemandPage />} />
           <Route path="/data" element={<DataPage />} />
+          <Route path="/sheets/:sheetName" element={<DataPage />} />
           <Route path="/sign-up" element={<SignUpPage />} />
           <Route path="*" element={<Page404 />} />
         </Routes>    

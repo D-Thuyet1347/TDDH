@@ -4,6 +4,12 @@ const qcReportSchema = new mongoose.Schema(
   {
     filename: { type: String, required: true, trim: true },
     originalName: { type: String, required: true, trim: true },
+    reportType: {
+      type: String,
+      enum: ["qc", "order-demand"],
+      default: "qc",
+      index: true,
+    },
     savedAt: { type: Date, default: Date.now, index: true },
     bytes: { type: Number, required: true, min: 1 },
     rowsImported: { type: Number, required: true, min: 0 },
@@ -17,7 +23,8 @@ const qcReportSchema = new mongoose.Schema(
       ],
       default: [],
     },
-    workbook: { type: Buffer, required: true, select: false },
+    workbook: { type: Buffer, select: false },
+    workbookId: { type: mongoose.Schema.Types.ObjectId },
   },
   { timestamps: true }
 );

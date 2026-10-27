@@ -265,13 +265,24 @@ const processJob = async (job) => {
   setJobStatus(job, "running");
 
   try {
-    const targetReport = await QcReport.findById(job.targetReportId)
+    let targetReport = await QcReport.findOne({
+      _id: job.targetReportId,
+      reportType: { $ne: "order-demand" },
+    })
       .select("filename")
       .lean();
     if (!targetReport) {
-      throw new Error("Báo cáo đích không còn tồn tại; hãy tải lại danh sách báo cáo.");
+      job.targetReportId = QC_REPORT_ID;
+      targetReport = await QcReport.findOne({
+        _id: QC_REPORT_ID,
+        reportType: { $ne: "order-demand" },
+      })
+        .select("filename")
+        .lean();
     }
-    job.targetReportFilename = path.parse(targetReport.filename).name;
+    job.targetReportFilename = targetReport?.filename
+      ? path.parse(targetReport.filename).name
+      : QC_REPORT_FILENAME;
 
     await runQcExport(job, config);
     if (config.importRows) {
@@ -347,7 +358,54 @@ export const getQcExportAvailability = () => {
   };
 };
 
-export const createExportJob = (input) => {
+const ensureQcExportReport = async (requestedReportId) => {
+  if (mongoose.connection.readyState !== 1) {
+    const error = new Error("MongoDB chưa kết nối; không thể tạo báo cáo QC.");
+    error.status = 503;
+    throw error;
+  }
+
+  let reportId = requestedReportId;
+  let report = await QcReport.findById(reportId).select("filename reportType").lean();
+  if (report?.reportType === "order-demand") {
+    reportId = new mongoose.Types.ObjectId().toString();
+    report = null;
+  }
+  if (report) return { reportId, filename: path.parse(report.filename).name };
+
+  const filename = `${QC_REPORT_FILENAME}.xlsx`;
+  report = await QcReport.findByIdAndUpdate(
+    reportId,
+    {
+      $setOnInsert: {
+        filename,
+        originalName: filename,
+        reportType: "qc",
+        savedAt: new Date(),
+        bytes: 1,
+        rowsImported: 0,
+        sheets: [],
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+      runValidators: true,
+      setDefaultsOnInsert: true,
+    }
+  )
+    .select("filename reportType")
+    .lean();
+
+  if (report.reportType === "order-demand") {
+    const error = new Error("Không thể tạo báo cáo QC vì mã báo cáo đang được dùng cho đơn hàng.");
+    error.status = 409;
+    throw error;
+  }
+  return { reportId: report._id.toString(), filename: path.parse(report.filename).name };
+};
+
+export const createExportJob = async (input) => {
   const config = getQcExportConfig();
   const missingSettings = getMissingQcExportSettings(config);
   if (missingSettings.length) {
@@ -421,14 +479,15 @@ export const createExportJob = (input) => {
     throw error;
   }
 
+  const targetReport = await ensureQcExportReport(targetReportId);
   const now = new Date();
   const job = {
     id: randomUUID(),
     status: "queued",
     importStatus: config.importRows ? "pending" : "not_requested",
     factory,
-    targetReportId,
-    targetReportFilename: null,
+    targetReportId: targetReport.reportId,
+    targetReportFilename: targetReport.filename,
     fromDate,
     toDate,
     coilIds,

@@ -9,13 +9,14 @@ import {
   getQcExportFileUrl,
   getQcExportJob,
   getReports,
+  uploadOrderDemandReport,
   startQcExport,
   uploadReport,
 } from '../AllAPIs';
 import QcLayout from '../components/QcLayout';
 import { fileSize, vnDateTime } from '../utils/ultils';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const now = new Date();
 const today = [
   now.getFullYear(),
@@ -92,9 +93,10 @@ export default function ExportPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState('web');
   const [file, setFile] = useState(null);
+  const [uploadReportType, setUploadReportType] = useState('qc');
   const [factory, setFactory] = useState('');
   const [reports, setReports] = useState([]);
-  const [targetReportId, setTargetReportId] = useState('');
+  const [targetReportId, setTargetReportId] = useState(DEFAULT_REPORT_ID);
   const [fromDate, setFromDate] = useState(startOfToday);
   const [toDate, setToDate] = useState(endOfToday);
   const [coilIds, setCoilIds] = useState('');
@@ -116,13 +118,16 @@ export default function ExportPage() {
     ])
       .then(([config, reportResult]) => {
         setAvailability(config);
-        setReports(reportResult.reports);
+        const qcReports = reportResult.reports.filter(
+          (report) => (report.report_type || 'qc') === 'qc'
+        );
+        setReports(qcReports);
         setTargetReportId((currentId) => (
-          reportResult.reports.some((report) => report.job_id === currentId)
+          qcReports.some((report) => report.job_id === currentId)
             ? currentId
-            : reportResult.reports.find((report) => report.job_id === DEFAULT_REPORT_ID)?.job_id
-              || reportResult.reports[0]?.job_id
-              || ''
+            : qcReports.find((report) => report.job_id === DEFAULT_REPORT_ID)?.job_id
+              || qcReports[0]?.job_id
+              || DEFAULT_REPORT_ID
         ));
         setFactory((currentFactory) => (
           (config.factories || DEFAULT_FACTORY_OPTIONS)
@@ -182,7 +187,7 @@ export default function ExportPage() {
       return;
     }
     if (selected.size > MAX_FILE_SIZE) {
-      setError('File vượt quá giới hạn 10 MB.');
+      setError('File vượt quá giới hạn 20 MB.');
       setFile(null);
       event.target.value = '';
       return;
@@ -211,8 +216,11 @@ export default function ExportPage() {
           setError('Vui lòng chọn file Excel cần tải lên.');
           return;
         }
-        const result = await uploadReport(file);
-        navigate(`/data?job_id=${encodeURIComponent(result.report.job_id)}`, {
+        const result = uploadReportType === 'order-demand'
+          ? await uploadOrderDemandReport(file)
+          : await uploadReport(file);
+        const destination = uploadReportType === 'order-demand' ? '/orders' : '/data';
+        navigate(`${destination}?job_id=${encodeURIComponent(result.report.job_id)}`, {
           state: { message: result.message },
         });
       }
@@ -296,8 +304,7 @@ export default function ExportPage() {
                 <label className="sm:col-span-3 hidden">
                   <span className="mb-1.5 block text-xs font-bold text-slate-600">Báo cáo cần ghi đè</span>
                   <select
-                    required
-                    disabled={loadingReports || reports.length === 0}
+                    disabled={loadingReports}
                     value={targetReportId}
                     onChange={(event) => setTargetReportId(event.target.value)}
                     className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-[#7992dc] disabled:bg-slate-50"
@@ -356,9 +363,26 @@ export default function ExportPage() {
               <div>
                 <h2 className="text-lg font-extrabold text-slate-800">Tải file Excel có sẵn</h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Nhập dữ liệu từ tất cả sheet có nội dung vào báo cáo tổng hợp; dữ liệu hiện tại sẽ được thay thế.
+                  Chọn loại báo cáo cần lưu. Dữ liệu đã có của loại báo cáo đó sẽ được thay thế.
                 </p>
               </div>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-bold text-slate-600">Loại báo cáo</span>
+                <select
+                  value={uploadReportType}
+                  onChange={(event) => setUploadReportType(event.target.value)}
+                  disabled={submitting}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#7992dc]"
+                >
+                  <option value="qc">Báo cáo QC HRC2</option>
+                  <option value="order-demand">Theo dõi đơn hàng HRC2</option>
+                </select>
+                <span className="mt-1 block text-xs text-slate-500">
+                  {uploadReportType === 'order-demand'
+                    ? 'File cần sheet “Nhu cầu đơn hàng HRC”. Dữ liệu đơn hàng lưu trong collection Tong_Hop_Don_Hang_HRC2 cùng database hrc2_qc với báo cáo QC; file kết quả là Tong_Hop_Don_Hang_HRC2.xlsx. Bạn vẫn có thể chọn loại QC để nhập hoặc xuất báo cáo QC.'
+                    : 'Nhập dữ liệu từ tất cả sheet của file Excel.'}
+                </span>
+              </label>
               <label
                 htmlFor="excel-file"
                 className="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#cbd5eb] bg-[#f9fbff] px-5 py-8 text-center transition hover:border-[#8298da] hover:bg-[#f3f6ff]"
@@ -368,7 +392,7 @@ export default function ExportPage() {
                 </span>
                 <span className="mt-4 text-sm font-bold text-slate-700">{file ? file.name : 'Chọn file Excel để tải lên'}</span>
                 <span className="mt-2 text-xs text-slate-500">
-                  {file ? `${fileSize(file.size)} · Excel` : 'Định dạng .xlsx hoặc .xls · Tối đa 10 MB'}
+                  {file ? `${fileSize(file.size)} · Excel` : 'Định dạng .xlsx hoặc .xls · Tối đa 20 MB'}
                 </span>
                 <input
                   ref={inputRef}
@@ -401,7 +425,7 @@ export default function ExportPage() {
             <button
               type="submit"
               disabled={submitting || (mode === 'web' && (
-                loadingConfig || loadingReports || availability?.configured === false || !factory || !targetReportId
+                loadingConfig || availability?.configured === false || !factory
               ))}
               className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#405bb0] px-4 text-sm font-bold text-white transition hover:bg-[#344b96] disabled:cursor-not-allowed disabled:opacity-50"
             >

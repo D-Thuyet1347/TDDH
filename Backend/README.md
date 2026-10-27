@@ -23,7 +23,7 @@ Backend mặc định dùng cổng `5000`, khớp với địa chỉ API mặc �
 
 ## Xuất từ website QC
 
-Trang Frontend `/export` cho chọn nhà máy trong danh sách QC, chọn ngày giờ bằng bộ chọn lịch và nhập danh sách mã cuộn tùy chọn. Backend tạo tác vụ xếp hàng, đăng nhập bằng `QC_USERNAME`/`QC_PASSWORD`, thao tác các trường CSS cấu hình và chờ website tải Excel. Frontend theo dõi trạng thái tác vụ và cho phép tải file. Các giá trị nhà máy phải nằm trong danh sách Backend cung cấp; Backend sẽ chọn đúng option tương ứng trên website QC.
+Trang Frontend `/export` cho chọn nhà máy trong danh sách QC, chọn ngày giờ bằng bộ chọn lịch và nhập danh sách mã cuộn tùy chọn. Khi nhấn bắt đầu, Backend tạo trước metadata báo cáo QC trong database `hrc2_qc` nếu chưa có rồi xếp tác vụ vào hàng đợi; khi xuất xong, file và dữ liệu được ghi vào báo cáo đích đó. Backend đăng nhập bằng `QC_USERNAME`/`QC_PASSWORD`, thao tác các trường CSS cấu hình và chờ website tải Excel. Frontend theo dõi trạng thái tác vụ và cho phép tải file. Các giá trị nhà máy phải nằm trong danh sách Backend cung cấp; Backend sẽ chọn đúng option tương ứng trên website QC.
 
 Các selector đăng nhập có thể để trống để dùng bộ chọn form phổ biến. Selector mở form xuất mặc định là `button[onclick="openExportModal()"]`; các selector nhà máy, ngày giờ và nút tải mặc định theo form QC hiện tại. Thay chúng bằng selector thực tế nếu HTML của website thay đổi. `CSS_COIL_IDS` có thể để trống nếu không dùng bộ lọc mã cuộn.
 
@@ -40,9 +40,18 @@ Trang xuất QC cho chọn báo cáo đích đã lưu; khi xuất thành công, 
 | `GET` | `/api/qc/exports/jobs/:jobId/file` | Tải file đã xuất |
 | `GET` | `/api/qc/dashboard-summary` | Tổng số báo cáo, dòng Excel, sheet và dung lượng |
 | `GET` | `/api/qc/reports?limit=20&offset=0&search=` | Danh sách báo cáo có phân trang/tìm tên file |
-| `POST` | `/api/qc/reports` | Tải Excel có sẵn qua multipart field `file` |
+| `POST` | `/api/qc/reports` | Tải file Excel báo cáo QC qua multipart field `file` |
 | `GET` | `/api/qc/reports/:reportId/rows?sheet=&limit=50&offset=0` | Đọc dữ liệu theo báo cáo/sheet |
 | `GET` | `/api/qc/reports/:reportId/file` | Tải lại file Excel gốc |
+| `GET` | `/api/nc/reports?limit=100&offset=0&search=` | Danh sách báo cáo nhu cầu đơn hàng |
+| `POST` | `/api/nc/reports` | Nhập workbook nhu cầu qua multipart field `file` |
+| `GET` | `/api/nc/reports/:reportId/file` | Tải workbook `Tong_Hop_Don_Hang_HRC2.xlsx` |
+| `GET` | `/api/nc/reports/:reportId/sheets/:sheetName/rows?search=&filters=&limit=50&offset=0` | Tìm kiếm/lọc dòng trong database dùng chung `hrc2_qc` |
+| `POST` | `/api/nc/reports/:reportId/sheets/:sheetName/rows` | Thêm dòng nhu cầu với body `{ "values": { "tên cột": "giá trị" } }` |
+| `PUT` | `/api/nc/reports/:reportId/sheets/:sheetName/rows/:rowId` | Cập nhật một dòng nhu cầu |
+| `DELETE` | `/api/nc/reports/:reportId/sheets/:sheetName/rows/:rowId` | Xóa một dòng nhu cầu |
+
+Frontend hiển thị danh sách sheet trong trang dữ liệu; mỗi sheet mở được thành trang riêng tại `/sheets/:sheetName`. Sheet **Nhu cầu đơn hàng HRC** có trang tra cứu chuyên biệt tại `/orders`, với lọc từng cột, tìm kiếm toàn sheet, sao chép nhanh một đơn hàng thành dòng mới và phân trang được xử lý ở Backend. Tham số `filters` là JSON object có tên cột làm key và chuỗi tìm kiếm làm value; tối đa 50 cột lọc trong một yêu cầu.
 
 Yêu cầu tạo tác vụ export:
 
@@ -57,4 +66,4 @@ Yêu cầu tạo tác vụ export:
 
 Thời gian được nhập theo giờ địa phương của máy chạy trình duyệt. Mặc định giao diện chọn từ 00:00 đến 23:59 trong ngày hiện tại. Website QC nhận cả giờ nếu trường ngày của website hỗ trợ `datetime-local`; với trường chỉ nhận ngày, Backend gửi phần ngày như trước.
 
-Chỉ nhận `.xlsx` và `.xls` cho file tải lên trực tiếp; giới hạn file tải lên 10 MB. Dữ liệu được đọc từ tất cả sheet có nội dung, với dòng đầu tiên là tiêu đề. Metadata/file gốc lưu trong `qcreports`, các dòng dữ liệu lưu trong `qcrows`.
+Chỉ nhận `.xlsx` và `.xls` cho file tải lên trực tiếp; giới hạn file tải lên 20 MB và 100.000 dòng dữ liệu mặc định (`MONGODB_MAX_ROWS` để điều chỉnh). Trang tải file cho chọn loại `qc` hoặc `order-demand`. Cả báo cáo QC và nhu cầu đơn hàng dùng chung database `hrc2_qc`: QC lưu qua `/api/qc`, còn đơn hàng lưu qua `/api/nc` trong collection `Tong_Hop_Don_Hang_HRC2`; metadata đơn hàng ở collection `Tong_Hop_Don_Hang_HRC2_Reports`, workbook ở GridFS bucket `ncworkbooks`. Workbook đầu ra `Tong_Hop_Don_Hang_HRC2.xlsx` có thể tải qua `/api/nc/reports/:reportId/file`. Backend tạo collection và index khi khởi động có kết nối MongoDB; metadata, workbook và các dòng đơn hàng cũ trong database `TDDHHRC2` được chuyển sang database dùng chung khi truy cập báo cáo/dữ liệu.

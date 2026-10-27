@@ -1,11 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { FileSpreadsheet, Files, LayoutDashboard, TableProperties, Upload } from 'lucide-react';
+import { ClipboardList, FileSpreadsheet, Files, LayoutDashboard, TableProperties, Upload } from 'lucide-react';
 
 const navigation = [
   { to: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
   { to: '/export', label: 'Xuất Excel', icon: Upload },
   { to: '/reports', label: 'Báo cáo', icon: Files },
+  { to: '/orders', label: 'Nhu cầu HRC', icon: ClipboardList },
   { to: '/data', label: 'Dữ liệu', icon: TableProperties },
 ];
 

@@ -13,7 +13,7 @@ import {
 
 const MAX_REPORTS_PER_PAGE = 100;
 const MAX_ROWS_PER_PAGE = 200;
-const MAX_IMPORTED_ROWS = 25000;
+const MAX_IMPORTED_ROWS = 100000;
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
@@ -24,6 +24,7 @@ const reportResponse = (report) => ({
   rows_imported: report.rowsImported,
   bytes: report.bytes,
   sheets: report.sheets,
+  report_type: report.reportType || "qc",
 });
 
 export const uploadReport = async (req, res, next) => {
@@ -45,7 +46,7 @@ export const uploadReport = async (req, res, next) => {
     }
 
     return res.status(201).json({
-      message: "Đã tải và lưu báo cáo Excel.",
+      message: "Đã tải và lưu báo cáo Excel QC.",
       report: reportResponse(report),
     });
   } catch (error) {
@@ -61,16 +62,20 @@ export const listReports = async (req, res, next) => {
     );
     const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
     const search = String(req.query.search || "").trim().slice(0, 100);
-    const filter = search
-      ? { filename: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" } }
-      : {};
+    const filter = { reportType: { $ne: "order-demand" } };
+    if (search) {
+      filter.filename = {
+        $regex: search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        $options: "i",
+      };
+    }
 
     const [reports, total] = await Promise.all([
       QcReport.find(filter)
         .sort({ savedAt: -1 })
         .skip(offset)
         .limit(limit)
-        .select("filename savedAt rowsImported bytes sheets")
+        .select("filename savedAt rowsImported bytes sheets reportType")
         .lean(),
       QcReport.countDocuments(filter),
     ]);
@@ -94,10 +99,13 @@ export const getReportRows = async (req, res, next) => {
     }
 
     const report = await QcReport.findById(reportId)
-      .select("sheets")
+      .select("sheets reportType")
       .lean();
     if (!report) {
       return res.status(404).json({ message: "Không tìm thấy báo cáo." });
+    }
+    if (report.reportType === "order-demand") {
+      return res.status(404).json({ message: "Không tìm thấy báo cáo QC." });
     }
 
     const limit = Math.min(
@@ -144,24 +152,43 @@ export const downloadReport = async (req, res, next) => {
     }
 
     const report = await QcReport.findById(req.params.reportId)
-      .select("+workbook filename")
+      .select("+workbook filename reportType")
       .exec();
     if (!report) {
       return res.status(404).json({ message: "Không tìm thấy file báo cáo." });
+    }
+    if (report.reportType === "order-demand") {
+      return res.status(404).json({ message: "Không tìm thấy file báo cáo QC." });
+    }
+
+    let workbookBucket;
+    if (report.workbookId) {
+      workbookBucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
+        bucketName: "qcworkbooks",
+      });
+      const workbookFile = await workbookBucket.find({ _id: report.workbookId }).next();
+      if (!workbookFile) {
+        return res.status(404).json({ message: "Không tìm thấy file Excel gốc." });
+      }
+    }
+    if (!workbookBucket && !report.workbook) {
+      return res.status(404).json({ message: "Không tìm thấy file Excel gốc." });
     }
 
     const encodedFilename = encodeURIComponent(report.filename);
     const contentType = report.filename.toLowerCase().endsWith(".xls")
       ? "application/vnd.ms-excel"
       : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    res.setHeader(
-      "Content-Type",
-      contentType
-    );
+    res.setHeader("Content-Type", contentType);
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="report"; filename*=UTF-8''${encodedFilename}`
     );
+    if (workbookBucket) {
+      const stream = workbookBucket.openDownloadStream(report.workbookId);
+      stream.on("error", next);
+      return stream.pipe(res);
+    }
     return res.send(Buffer.from(report.workbook));
   } catch (error) {
     return next(error);
@@ -171,8 +198,9 @@ export const downloadReport = async (req, res, next) => {
 export const getDashboardSummary = async (req, res, next) => {
   try {
     const [reports, totals] = await Promise.all([
-      QcReport.countDocuments(),
+      QcReport.countDocuments({ reportType: { $ne: "order-demand" } }),
       QcReport.aggregate([
+        { $match: { reportType: { $ne: "order-demand" } } },
         {
           $group: {
             _id: null,
@@ -199,7 +227,7 @@ export const getDashboardSummary = async (req, res, next) => {
 export const listJobs = async (req, res, next) => {
   try {
     const [reports, exportJobs] = await Promise.all([
-      QcReport.find()
+      QcReport.find({ reportType: { $ne: "order-demand" } })
       .sort({ savedAt: -1 })
       .limit(100)
       .select("filename savedAt")
@@ -239,9 +267,9 @@ export const getQcHealth = (req, res) => {
 export const getExportAvailability = (req, res) =>
   res.json(getQcExportAvailability());
 
-export const createQcExport = (req, res) => {
+export const createQcExport = async (req, res) => {
   try {
-    const job = createExportJob(req.body || {});
+    const job = await createExportJob(req.body || {});
     return res.status(202).json({ job });
   } catch (error) {
     return res.status(error.status || 500).json({

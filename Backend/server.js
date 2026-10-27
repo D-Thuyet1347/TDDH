@@ -8,10 +8,13 @@ import mongoose from "mongoose";
 import "dotenv/config";
 import { connectDB } from "./config/db.js";
 import { ensureUserIndexes } from "./models/userModel.js";
+import { initializeNcModel } from "./models/ncModel.js";
+import { initializeNcReportModel } from "./models/ncReportModel.js";
 
 // Import routers
 import userRouter from "./routes/userRouter.js";
 import qcRouter from "./routes/qcRouter.js";
+import ncRouter from "./routes/ncRouter.js";
 
 const app = express();
 const port = Number.parseInt(process.env.PORT || "5000", 10);
@@ -65,13 +68,14 @@ app.use("/images", express.static(path.join(process.cwd(), "uploads")));
 // ===================== ROUTES =====================
 app.use("/api/user", userRouter);
 app.use("/api/qc", qcRouter);
+app.use("/api/nc", ncRouter);
 
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
   if (error instanceof multer.MulterError) {
     const status = error.code === "LIMIT_FILE_SIZE" ? 413 : 400;
     const message = error.code === "LIMIT_FILE_SIZE"
-      ? "File Excel không được vượt quá 10 MB."
+      ? "File Excel không được vượt quá 20 MB."
       : "Không thể nhận file Excel trong yêu cầu này.";
     return res.status(status).json({ message });
   }
@@ -88,6 +92,10 @@ app.get("/", (req, res) => {
 const startServer = async () => {
   await connectDB();
   await ensureUserIndexes();
+  if (mongoose.connection.readyState === 1) {
+    await initializeNcModel().createIndexes();
+    await initializeNcReportModel().createIndexes();
+  }
   const server = app.listen(port, host, () => {
     console.log(`Server started on http://${host}:${port}`);
   });
