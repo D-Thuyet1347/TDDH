@@ -11,6 +11,7 @@ import {
   getQcExportJob,
   getDashboardSummary,
   listQcExportJobs,
+  getQcColumnValues,
   getQcHealth,
   getReportQualitySummary,
   getReportRows,
@@ -18,6 +19,7 @@ import {
   listReports,
   uploadReport,
 } from "../controllers/qcController.js";
+import { syncNcWithQc } from "../controllers/ncController.js";
 
 const qcRouter = express.Router();
 const upload = multer({
@@ -41,5 +43,11 @@ qcRouter.post("/reports", upload.single("file"), uploadReport);
 qcRouter.get("/reports/:reportId/file", downloadReport);
 qcRouter.get("/reports/:reportId/quality-summary", getReportQualitySummary);
 qcRouter.get("/reports/:reportId/rows", getReportRows);
+qcRouter.get("/reports/:reportId/column-values", getQcColumnValues);
+
+// Đồng bộ QC & Nhu cầu đơn hàng (hỗ trợ cả qua qcRouter)
+qcRouter.all("/reports/:reportId/sync-qc", syncNcWithQc);
+qcRouter.all("/sync-qc", syncNcWithQc);
+qcRouter.all("/sync-nc", syncNcWithQc);
 
 export default qcRouter;

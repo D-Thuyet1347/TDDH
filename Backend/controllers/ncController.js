@@ -1,10 +1,13 @@
 import {
   createOrderDemandRow,
   deleteOrderDemandRow,
+  getOrderDemandColumnValues,
   getOrderDemandRows,
   importOrderDemandReport,
   listOrderDemandReports,
   openOrderDemandWorkbook,
+  ORDER_DEMAND_SHEET_NAME,
+  syncOrderDemandWithQcData,
   updateOrderDemandRow,
 } from "../services/ncReportService.js";
 
@@ -82,6 +85,18 @@ export const getNcRows = async (req, res, next) => {
   }
 };
 
+export const getNcColumnValues = async (req, res, next) => {
+  try {
+    const result = await getOrderDemandColumnValues({
+      reportId: req.params.reportId,
+      sheetName: req.params.sheetName || req.query.sheetName || ORDER_DEMAND_SHEET_NAME,
+    });
+    return res.json(result);
+  } catch (error) {
+    return handleError(error, res, next);
+  }
+};
+
 export const createNcRow = async (req, res, next) => {
   try {
     const row = await createOrderDemandRow({
@@ -117,6 +132,20 @@ export const deleteNcRow = async (req, res, next) => {
       rowId: req.params.rowId,
     });
     return res.json({ message: "Đã xóa dòng nhu cầu đơn hàng.", ...result });
+  } catch (error) {
+    return handleError(error, res, next);
+  }
+};
+
+export const syncNcWithQc = async (req, res, next) => {
+  try {
+    const reportId = req.params.reportId || req.body?.reportId || req.query?.reportId;
+    const qcReportId = req.body?.qcReportId || req.query?.qcReportId;
+    const result = await syncOrderDemandWithQcData({
+      reportId,
+      qcReportId,
+    });
+    return res.json(result);
   } catch (error) {
     return handleError(error, res, next);
   }

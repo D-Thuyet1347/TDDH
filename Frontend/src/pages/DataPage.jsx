@@ -1,8 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AlertCircle, Copy, Download, FileSpreadsheet, Filter, LoaderCircle, Search } from 'lucide-react';
-import { getReportFileUrl, getReportQualitySummary, getReportRows, getReports } from '../AllAPIs';
+import {
+  AlertCircle,
+  Copy,
+  Download,
+  FileSpreadsheet,
+  LoaderCircle,
+  RotateCcw,
+  Search,
+  TableProperties,
+} from 'lucide-react';
+import { getReportColumnValues, getReportFileUrl, getReportQualitySummary, getReportRows, getReports } from '../AllAPIs';
 import QcLayout from '../components/QcLayout';
+import ExcelFilterDropdown from '../components/ExcelFilterDropdown';
 import { Alert } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -11,7 +21,7 @@ import { Select } from '../components/ui/select';
 import { Table } from '../components/ui/table';
 import { nf, vnDateTime } from '../utils/ultils';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 100;
 const LOAD_MORE_THRESHOLD = 240;
 const QUALITY_CLASSIFICATIONS = [
   { key: 'Loại 1 || PRIME', label: 'Loại 1 || PRIME' },
@@ -24,12 +34,12 @@ const SKIN_HANDLING_TYPES = [
   { key: 'SKIN_CUST', label: 'SKIN_CUST' },
 ];
 const QC_COLUMN_GROUPS = {
-  'THÔNG TIN CHUNG': 'bg-[#dbeafe] text-slate-700',
-  'BỀ MẶT': 'bg-[#ffe4e6] text-slate-700',
-  'KÍCH THƯỚC': 'bg-[#dbeafe] text-slate-700',
-  'CƠ/LÝ/HÓA': 'bg-[#d1fae5] text-slate-700',
-  'NGOẠI QUAN': 'bg-[#ede9fe] text-slate-700',
-  'GHI CHÚ QC': 'bg-[#f59e0b] text-white',
+  'THÔNG TIN CHUNG': 'bg-indigo-50/90 text-indigo-900 border-indigo-100',
+  'BỀ MẶT': 'bg-rose-50/90 text-rose-900 border-rose-100',
+  'KÍCH THƯỚC': 'bg-blue-50/90 text-blue-900 border-blue-100',
+  'CƠ/LÝ/HÓA': 'bg-emerald-50/90 text-emerald-900 border-emerald-100',
+  'NGOẠI QUAN': 'bg-purple-50/90 text-purple-900 border-purple-100',
+  'GHI CHÚ QC': 'bg-amber-100/90 text-amber-900 border-amber-200',
 };
 
 const isQcColumnHeader = (row) =>
@@ -55,8 +65,8 @@ export default function DataPage() {
   const [copyMessage, setCopyMessage] = useState('');
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({});
-  const [filterDraft, setFilterDraft] = useState('');
-  const [activeFilterColumn, setActiveFilterColumn] = useState('');
+  const [columnValues, setColumnValues] = useState({});
+  const [sortState, setSortState] = useState(null); // { column: string, direction: 'asc' | 'desc' }
   const [loadingReports, setLoadingReports] = useState(true);
   const [loadingRows, setLoadingRows] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -65,7 +75,15 @@ export default function DataPage() {
   const nextOffsetRef = useRef(0);
   const queryVersionRef = useRef(0);
   const loadingMoreRef = useRef(false);
-  const activeFilterCount = Object.values(filters).filter((value) => value.trim()).length;
+
+  const activeFilterCount = useMemo(
+    () => Object.values(filters).filter((val) => {
+      if (Array.isArray(val)) return val.length > 0;
+      return Boolean(String(val ?? '').trim());
+    }).length,
+    [filters]
+  );
+
   const copyHandlingIds = async (type) => {
     const ids = qualitySummary?.ids?.[type] || [];
     if (!ids.length) {
@@ -85,8 +103,7 @@ export default function DataPage() {
     setSheet(routeSheet);
     setSearch('');
     setFilters({});
-    setFilterDraft('');
-    setActiveFilterColumn('');
+    setSortState(null);
     setColumnHeaders(null);
     setHasGroupedHeaders(false);
     setHeaderRowsCount(0);
@@ -98,8 +115,7 @@ export default function DataPage() {
       setSheet(routeSheet);
       setSearch('');
       setFilters({});
-      setFilterDraft('');
-      setActiveFilterColumn('');
+      setSortState(null);
       setColumnHeaders(null);
       setHasGroupedHeaders(false);
       setHeaderRowsCount(0);
@@ -157,23 +173,34 @@ export default function DataPage() {
               setError(summaryError.message);
             }
           });
+        getReportColumnValues({ reportId, sheet, signal: controller.signal })
+          .then((res) => {
+            if (queryVersionRef.current === queryVersion && res?.columns) {
+              setColumnValues(res.columns);
+            }
+          })
+          .catch(() => {});
         const result = await getReportRows({
           reportId,
           sheet,
+          search,
+          filters,
           limit: PAGE_SIZE + 1,
           offset: 0,
           signal: controller.signal,
         });
         if (queryVersionRef.current !== queryVersion) return;
         const groupedHeaderRows = result.rows.filter(isQcColumnHeader);
-        setColumnHeaders(groupedHeaderRows[0]?.values || null);
-        setHasGroupedHeaders(groupedHeaderRows.length > 0);
-        setHeaderRowsCount(groupedHeaderRows.length);
+        if (groupedHeaderRows.length > 0) {
+          setColumnHeaders(groupedHeaderRows[0]?.values || null);
+          setHasGroupedHeaders(true);
+          setHeaderRowsCount(groupedHeaderRows.length);
+        }
         const firstPageRows = result.rows
           .filter((row) => !isQcColumnHeader(row))
           .slice(0, PAGE_SIZE);
         setRows(firstPageRows);
-        nextOffsetRef.current = firstPageRows.length + groupedHeaderRows.length;
+        nextOffsetRef.current = firstPageRows.length + (groupedHeaderRows.length || 0);
         setTotal(result.total);
         setSheets(result.sheets);
       } catch (loadError) {
@@ -188,7 +215,7 @@ export default function DataPage() {
     };
     loadRows();
     return () => controller.abort();
-  }, [reportId, sheet]);
+  }, [reportId, sheet, search, filters]);
 
   const loadMoreRows = async () => {
     if (
@@ -206,6 +233,8 @@ export default function DataPage() {
       const result = await getReportRows({
         reportId,
         sheet,
+        search,
+        filters,
         limit: PAGE_SIZE,
         offset,
       });
@@ -233,10 +262,11 @@ export default function DataPage() {
   };
 
   const selectedReport = reports.find((report) => report.job_id === reportId);
-  const columns = useMemo(
-    () => [...new Set(rows.flatMap((row) => Object.keys(row.values || {})))],
-    [rows]
-  );
+  const columns = useMemo(() => {
+    const fromRows = rows.flatMap((row) => Object.keys(row.values || {}));
+    const fromColumnValues = Object.keys(columnValues || {});
+    return [...new Set([...fromRows, ...fromColumnValues])];
+  }, [rows, columnValues]);
   const columnGroups = useMemo(() => {
     let currentGroup = '';
     return columns.reduce((groups, column) => {
@@ -246,19 +276,85 @@ export default function DataPage() {
     }, {});
   }, [columns]);
   const visibleTotal = Math.max(0, total - headerRowsCount);
+
+  // Excel-style filter handlers
+  const handleApplyFilter = (columnKey, selectedValues) => {
+    setFilters((current) => {
+      const next = { ...current };
+      if (!selectedValues || (Array.isArray(selectedValues) && selectedValues.length === 0)) {
+        delete next[columnKey];
+      } else {
+        next[columnKey] = selectedValues;
+      }
+      return next;
+    });
+  };
+
+  const handleClearFilter = (columnKey) => {
+    setFilters((current) => {
+      const next = { ...current };
+      delete next[columnKey];
+      return next;
+    });
+  };
+
+  const handleSort = (columnKey, direction) => {
+    setSortState({ column: columnKey, direction });
+  };
+
+  // Filtered and sorted rows
   const filteredRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('vi-VN');
-    return rows.filter((row) => {
+    const result = rows.filter((row) => {
       const values = row.values || {};
       const matchesSearch = !query || Object.values(values).some((value) =>
         String(value ?? '').toLocaleLowerCase('vi-VN').includes(query)
       );
-      return matchesSearch && Object.entries(filters).every(([column, filter]) =>
-        String(values[column] ?? '').toLocaleLowerCase('vi-VN')
-          .includes(filter.trim().toLocaleLowerCase('vi-VN'))
-      );
+
+      const matchesFilters = Object.entries(filters).every(([column, filter]) => {
+        if (!filter) return true;
+        const cellRaw = values[column];
+        const cellStr = cellRaw === null || cellRaw === undefined ? '' : String(cellRaw).trim();
+
+        if (Array.isArray(filter)) {
+          if (filter.length === 0) return true;
+          if (filter.includes('__NO_MATCH__')) return false;
+
+          return filter.some((f) => {
+            if (f === '__BLANK__' || f === '' || f === '(Trống)') {
+              return !cellStr || cellStr === '—' || cellStr === '-';
+            }
+            return cellStr.toLocaleLowerCase('vi-VN') === String(f).trim().toLocaleLowerCase('vi-VN');
+          });
+        }
+
+        return cellStr.toLocaleLowerCase('vi-VN').includes(String(filter).trim().toLocaleLowerCase('vi-VN'));
+      });
+
+      return matchesSearch && matchesFilters;
     });
-  }, [rows, search, filters]);
+
+    if (sortState?.column) {
+      const { column, direction } = sortState;
+      result.sort((a, b) => {
+        const valA = a.values?.[column];
+        const valB = b.values?.[column];
+        const strA = valA === null || valA === undefined ? '' : String(valA).trim();
+        const strB = valB === null || valB === undefined ? '' : String(valB).trim();
+        const numA = Number(strA);
+        const numB = Number(strB);
+        let cmp = 0;
+        if (!Number.isNaN(numA) && !Number.isNaN(numB) && strA !== '' && strB !== '') {
+          cmp = numA - numB;
+        } else {
+          cmp = strA.localeCompare(strB, 'vi-VN', { numeric: true, sensitivity: 'base' });
+        }
+        return direction === 'desc' ? -cmp : cmp;
+      });
+    }
+
+    return result;
+  }, [rows, search, filters, sortState]);
 
   const selectReport = (event) => {
     const nextId = event.target.value;
@@ -267,41 +363,10 @@ export default function DataPage() {
     setSheet(routeSheet);
     setSearch('');
     setFilters({});
-    setFilterDraft('');
-    setActiveFilterColumn('');
+    setSortState(null);
     setColumnHeaders(null);
     setHasGroupedHeaders(false);
     setHeaderRowsCount(0);
-  };
-
-  const toggleColumnFilter = (column) => {
-    if (activeFilterColumn === column) {
-      setActiveFilterColumn('');
-      return;
-    }
-    setFilterDraft(filters[column] || '');
-    setActiveFilterColumn(column);
-  };
-
-  const applyColumnFilter = (column) => {
-    const value = filterDraft.trim();
-    setFilters((current) => {
-      const next = { ...current };
-      if (value) next[column] = value;
-      else delete next[column];
-      return next;
-    });
-    setActiveFilterColumn('');
-  };
-
-  const clearColumnFilter = (column) => {
-    setFilters((current) => {
-      const next = { ...current };
-      delete next[column];
-      return next;
-    });
-    setFilterDraft('');
-    setActiveFilterColumn('');
   };
 
   const selectSheet = (event) => {
@@ -318,39 +383,45 @@ export default function DataPage() {
 
   return (
     <QcLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 sm:space-y-8 w-full">
+        {/* Header */}
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold text-blue-700">Không gian dữ liệu</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{routeSheet || 'Dữ liệu Excel'}</h1>
-            <p className="mt-2 text-sm text-slate-500">
-              {routeSheet ? `Dữ liệu sheet ${routeSheet} trong báo cáo đã nhập.` : 'Xem các dòng đã nhập theo báo cáo và sheet.'}
+            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-200/70">
+              <TableProperties size={14} className="text-indigo-600" /> Không gian dữ liệu Excel QC
+            </div>
+            <h1 className="text-[clamp(28px,3vw,36px)] font-extrabold leading-tight tracking-tight text-slate-900">
+              {routeSheet || 'Dữ liệu Excel'}
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {routeSheet ? `Dữ liệu sheet ${routeSheet} trong báo cáo đã nhập.` : 'Xem và lọc chi tiết các dòng dữ liệu Excel.'}
             </p>
           </div>
           {selectedReport && (
-            <Button asChild variant="outline"
-              className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#dce4f5] bg-white px-4 text-sm font-bold text-[#405bb0] hover:bg-[#f4f7ff]"
-            >
-              <a href={getReportFileUrl(selectedReport.job_id)}><Download size={16} /> Tải file gốc</a>
+            <Button asChild variant="outline" className="h-10 rounded-xl border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50">
+              <a href={getReportFileUrl(selectedReport.job_id)}>
+                <Download size={15} /> Tải file gốc
+              </a>
             </Button>
           )}
         </header>
 
         {location.state?.message && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 text-xs font-semibold text-emerald-800">
             {location.state.message}
           </div>
         )}
 
-        <Card className="rounded-2xl border-slate-200/80 p-4 sm:p-5">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,2fr)_minmax(180px,1fr)_minmax(200px,1fr)]">
+        {/* Filter controls */}
+        <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
+          <div className="grid grid-cols-1 gap-3.5 md:grid-cols-[minmax(0,2fr)_minmax(180px,1fr)_minmax(200px,1fr)]">
             <label className="min-w-0">
-              <span className="mb-1.5 block text-xs font-bold text-slate-600">Báo cáo</span>
+              <span className="mb-1.5 block text-xs font-bold text-slate-700">Báo cáo</span>
               <Select
                 value={reportId}
                 onChange={selectReport}
                 disabled={loadingReports || reports.length === 0}
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#7992dc]"
+                className="h-10 w-full"
               >
                 <option value="">{loadingReports ? 'Đang tải báo cáo…' : 'Chọn báo cáo'}</option>
                 {reports.map((report) => (
@@ -359,290 +430,219 @@ export default function DataPage() {
               </Select>
             </label>
             <label>
-              <span className="mb-1.5 block text-xs font-bold text-slate-600">Sheet</span>
+              <span className="mb-1.5 block text-xs font-bold text-slate-700">Sheet dữ liệu</span>
               <Select
                 value={sheet}
                 onChange={selectSheet}
                 disabled={!reportId || loadingRows}
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#7992dc]"
+                className="h-10 w-full"
               >
                 <option value="">Tất cả sheet</option>
                 {sheets.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
               </Select>
             </label>
             <label className="relative">
-              <span className="mb-1.5 block text-xs font-bold text-slate-600">Tìm trong dữ liệu đã tải</span>
+              <span className="mb-1.5 block text-xs font-bold text-slate-700">Tìm kiếm nhanh</span>
               <Search size={15} className="pointer-events-none absolute bottom-3 left-3 text-slate-400" />
               <Input
                 value={search}
                 maxLength={100}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Tìm trong các dòng đã tải…"
-                className="h-10 w-full rounded-lg border border-slate-200 pl-9 pr-3 text-sm outline-none focus:border-[#7992dc]"
+                className="h-10 w-full pl-9 pr-3 text-xs"
               />
             </label>
           </div>
+
           {activeFilterCount > 0 && (
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3.5 flex justify-end">
               <Button
                 type="button"
-                variant="ghost"
-                onClick={() => {
-                  setFilters({});
-                  setFilterDraft('');
-                  setActiveFilterColumn('');
-                }}
-                className="rounded-lg px-3 py-1.5 text-xs font-bold text-[#405bb0] hover:bg-blue-50"
+                variant="outline"
+                size="sm"
+                onClick={() => setFilters({})}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border-indigo-200 bg-indigo-50/70 px-3.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100/80"
               >
+                <RotateCcw size={13} />
                 Xóa {activeFilterCount} bộ lọc
               </Button>
             </div>
           )}
+
           {selectedReport && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
-              <span className="flex items-center gap-2"><FileSpreadsheet size={15} className="text-emerald-600" />{selectedReport.filename}</span>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs font-medium text-slate-400">
+              <span className="flex items-center gap-2 text-slate-600 font-semibold">
+                <FileSpreadsheet size={15} className="text-emerald-600" />
+                {selectedReport.filename}
+              </span>
               <span>{vnDateTime(selectedReport.saved_at)} · {nf(visibleTotal)} dòng{sheet ? ` · ${sheet}` : ''}</span>
             </div>
           )}
         </Card>
 
-
         {error && (
-          <Alert variant="destructive" className="flex items-center gap-2 rounded-xl p-4 text-sm">
-            <AlertCircle size={17} /> {error}
+          <Alert variant="destructive" className="flex items-center gap-2 rounded-2xl p-4 text-xs font-semibold">
+            <AlertCircle size={18} /> {error}
           </Alert>
         )}
 
+        {/* Quality classification summary */}
         {!loadingRows && qualitySummary && (
           <>
-          <Card className="rounded-2xl border-slate-200/80 p-4 sm:p-5">
-            <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <p className="text-sm font-bold text-slate-900">TỔNG CẤP CHẤT LƯỢNG</p>
-                <p className="mt-1 text-xs text-slate-500">Phân loại trên toàn bộ file</p>
-              </div>
-              <span className="text-xs text-slate-500">
-                Tổng dữ liệu: {nf(qualitySummary.totalRows)} dòng
-              </span>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {QUALITY_CLASSIFICATIONS.map(({ key, label }) => (
-                <div key={key} className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                  <p className="text-xs font-semibold text-slate-500">{label}</p>
-                  <p className="mt-2 text-2xl font-bold text-slate-950">
-                    {nf(qualitySummary.counts[key] || 0)}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold text-[#405bb0]">
-                    {qualitySummary.totalRows
-                      ? ((qualitySummary.counts[key] / qualitySummary.totalRows) * 100)
-                        .toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                      : '0,00'}%
-                  </p>
+            <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <p className="text-sm font-bold text-slate-900">TỔNG CẤP CHẤT LƯỢNG</p>
+                  <p className="mt-0.5 text-xs text-slate-500">Phân loại trên toàn bộ file</p>
                 </div>
-              ))}
-            </div>
-          </Card>
-          <Card className="rounded-2xl border-slate-200/80 p-4 sm:p-5">
-            <div className="mb-4">
-              <p className="text-sm font-bold text-slate-900">TỶ LỆ CHẤT LƯỢNG THEO NGÀY</p>
-              <p className="mt-1 text-xs text-slate-500">
-                Tỷ lệ từng nhóm trên tổng số dòng có ngày sản xuất tương ứng.
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <Table className="w-full min-w-[760px] border-collapse text-left text-xs">
-                <thead className="bg-[#f8faff] text-[11px] font-bold text-slate-600">
-                  <tr>
-                    <th className="px-3 py-3">Ngày sản xuất</th>
-                    <th className="px-3 py-3 text-right">Tổng dòng</th>
-                    {QUALITY_CLASSIFICATIONS.map(({ key, label }) => (
-                      <th key={key} className="px-3 py-3 text-right">{label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(qualitySummary.daily || []).map((day) => (
-                    <tr key={day.date}>
-                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{day.date}</td>
-                      <td className="px-3 py-2.5 text-right">{nf(day.totalRows)}</td>
-                      {QUALITY_CLASSIFICATIONS.map(({ key }) => {
-                        const count = day.counts[key] || 0;
-                        const percent = day.totalRows
-                          ? (count / day.totalRows) * 100
-                          : 0;
-                        return (
-                          <td key={key} className="whitespace-nowrap px-3 py-2.5 text-right">
-                            {nf(count)} · {percent.toLocaleString('vi-VN', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}%
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                  {!(qualitySummary.daily || []).length && (
-                    <tr>
-                      <td colSpan={QUALITY_CLASSIFICATIONS.length + 2} className="px-3 py-6 text-center text-slate-500">
-                        Không có dữ liệu ngày sản xuất.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </Table>
-            </div>
-          </Card>
-          <Card className="rounded-2xl border-slate-200/80 p-4 sm:p-5">
-            <div className="mb-4">
-              <p className="text-sm font-bold text-slate-900">SAO CHÉP ID GỐC THEO HƯỚNG XỬ LÝ</p>
-              <p className="mt-1 text-xs text-slate-500">
-                Lọc theo hướng xử lý; mỗi ID được sao chép một lần, mỗi dòng một ID.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              {SKIN_HANDLING_TYPES.map(({ key, label }) => (
-                <Button
-                  key={key}
-                  type="button"
-                  variant="outline"
-                  onClick={() => void copyHandlingIds(key)}
-                  disabled={!qualitySummary.ids?.[key]?.length}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  <Copy size={15} />
-                  Sao chép ID GỐC {label} ({nf(qualitySummary.ids?.[key]?.length || 0)})
-                </Button>
-              ))}
-            </div>
-            {copyMessage && (
-              <p role="status" className="mt-3 text-xs text-slate-600">{copyMessage}</p>
-            )}
-          </Card>
+                <span className="text-xs font-semibold text-slate-500">
+                  Tổng dữ liệu: <strong className="text-slate-900">{nf(qualitySummary.totalRows)}</strong> dòng
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {QUALITY_CLASSIFICATIONS.map(({ key, label }) => (
+                  <div key={key} className="rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3">
+                    <p className="text-xs font-semibold text-slate-500">{label}</p>
+                    <p className="mt-2 text-2xl font-extrabold text-slate-900">
+                      {nf(qualitySummary.counts[key] || 0)}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-indigo-600">
+                      {qualitySummary.totalRows
+                        ? ((qualitySummary.counts[key] / qualitySummary.totalRows) * 100)
+                          .toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                        : '0,00'}%
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
+              <div className="mb-4">
+                <p className="text-sm font-bold text-slate-900">SAO CHÉP ID GỐC THEO HƯỚNG XỬ LÝ</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Lọc theo hướng xử lý; mỗi ID được sao chép một lần, mỗi dòng một ID.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {SKIN_HANDLING_TYPES.map(({ key, label }) => (
+                  <Button
+                    key={key}
+                    type="button"
+                    variant="outline"
+                    onClick={() => void copyHandlingIds(key)}
+                    disabled={!qualitySummary.ids?.[key]?.length}
+                    className="inline-flex h-10 items-center gap-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50"
+                  >
+                    <Copy size={15} />
+                    Sao chép ID GỐC {label} ({nf(qualitySummary.ids?.[key]?.length || 0)})
+                  </Button>
+                ))}
+              </div>
+              {copyMessage && (
+                <p role="status" className="mt-3 text-xs font-semibold text-emerald-700">{copyMessage}</p>
+              )}
+            </Card>
           </>
         )}
 
+        {/* Data Table */}
         {!loadingReports && reports.length === 0 ? (
-          <div className="rounded-2xl border border-[#e5e9f2] bg-white px-6 py-14 text-center">
-            <FileSpreadsheet className="mx-auto mb-3 text-slate-300" size={30} />
-            <p className="text-sm text-slate-500">Chưa có dữ liệu Excel.</p>
-            <Link to="/export" className="mt-4 inline-flex text-sm font-bold text-[#405bb0] hover:underline">Tải file Excel lên</Link>
+          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
+            <FileSpreadsheet className="mx-auto mb-3 text-slate-300" size={32} />
+            <p className="text-sm font-semibold text-slate-600">Chưa có dữ liệu Excel.</p>
+            <Link to="/export" className="mt-3 inline-flex text-xs font-bold text-indigo-600 hover:underline">
+              Tải file Excel lên ngay →
+            </Link>
           </div>
         ) : loadingRows ? (
-          <div className="flex min-h-56 items-center justify-center gap-2 text-sm text-slate-500">
-            <LoaderCircle size={18} className="animate-spin" /> Đang tải dữ liệu…
+          <div className="flex min-h-56 items-center justify-center gap-2 text-xs font-medium text-slate-500">
+            <LoaderCircle size={18} className="animate-spin text-indigo-600" /> Đang tải dữ liệu…
           </div>
         ) : rows.length === 0 && !error ? (
-          <div className="rounded-2xl border border-[#e5e9f2] bg-white px-6 py-14 text-center text-sm text-slate-500">
+          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center text-xs font-medium text-slate-500">
             {routeSheet ? 'Sheet này không có dòng dữ liệu.' : 'Báo cáo này không có dòng dữ liệu.'}
           </div>
         ) : rows.length > 0 ? (
-          <Card className="overflow-hidden rounded-2xl border-slate-200/80">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 text-xs text-slate-500 sm:px-5">
-              <span>Đang hiển thị {filteredRows.length.toLocaleString('vi-VN')} / {visibleTotal.toLocaleString('vi-VN')} dòng</span>
+          <Card className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-card">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 text-xs font-semibold text-slate-500 bg-slate-50/50">
+              <span>
+                Đang hiển thị <strong className="text-slate-900">{filteredRows.length.toLocaleString('vi-VN')}</strong> / {visibleTotal.toLocaleString('vi-VN')} dòng
+              </span>
+              {sortState?.column && (
+                <span className="text-[11px] font-medium text-indigo-600">
+                  Đang sắp xếp: {columnHeaders?.[sortState.column] || sortState.column} ({sortState.direction === 'asc' ? 'A → Z' : 'Z → A'})
+                </span>
+              )}
             </div>
+
             <div
               ref={tableScrollRef}
               onScroll={handleTableScroll}
               className="max-h-[75vh] overflow-auto"
             >
               <Table wrapperClassName="contents" className="w-full min-w-[640px] border-collapse text-left text-xs">
-                <thead className="sticky top-0 bg-[#f8faff] text-[11px] font-bold text-slate-600">
+                <thead className="sticky top-0 z-20 shadow-xs">
                   <tr>
                     {!hasGroupedHeaders && (
-                      <th className="whitespace-nowrap px-3 py-3">Sheet / dòng</th>
+                      <th className="whitespace-nowrap px-3 py-3 border-b border-slate-200 bg-slate-100 font-bold text-slate-700">
+                        Sheet / dòng
+                      </th>
                     )}
                     {columns.map((column) => (
                       <th
                         key={column}
-                        className={`relative min-w-36 whitespace-nowrap px-3 py-3 text-center align-middle ${
-                          QC_COLUMN_GROUPS[columnGroups[column]] || 'bg-[#f8faff] text-slate-600'
+                        className={`border-b border-r border-slate-200/80 min-w-36 whitespace-nowrap px-3 py-3 text-center align-middle font-bold ${
+                          QC_COLUMN_GROUPS[columnGroups[column]] || 'bg-slate-50 text-slate-700'
                         }`}
                       >
-                        <div className="flex items-center justify-center gap-1">
-                          <span>{String(columnHeaders?.[column] || column)}</span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Mở bộ lọc cột ${String(columnHeaders?.[column] || column)}`}
-                            aria-expanded={activeFilterColumn === column}
-                            title={filters[column] ? `Đang lọc: ${filters[column]}` : `Lọc ${String(columnHeaders?.[column] || column)}`}
-                            onClick={() => toggleColumnFilter(column)}
-                            className={`shrink-0 rounded p-1 transition hover:bg-black/10 ${
-                              filters[column] ? 'text-[#263f94]' : 'text-slate-500'
-                            }`}
-                          >
-                            <Filter size={13} />
-                          </Button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span className="leading-4">{String(columnHeaders?.[column] || column)}</span>
+                          <ExcelFilterDropdown
+                            columnKey={column}
+                            title={String(columnHeaders?.[column] || column)}
+                            rows={rows}
+                            allColumnValues={columnValues[column]}
+                            activeFilter={filters[column]}
+                            sortState={sortState}
+                            onApplyFilter={handleApplyFilter}
+                            onClearFilter={handleClearFilter}
+                            onSort={handleSort}
+                          />
                         </div>
-                        {activeFilterColumn === column && (
-                          <form
-                            onSubmit={(event) => {
-                              event.preventDefault();
-                              applyColumnFilter(column);
-                            }}
-                            onClick={(event) => event.stopPropagation()}
-                            className="absolute left-0 top-full z-30 w-60 rounded-lg border border-slate-200 bg-white p-3 text-left font-normal text-slate-700 shadow-xl"
-                          >
-                            <label className="flex flex-col text-xs font-bold text-slate-700">
-                              Lọc cột: {String(columnHeaders?.[column] || column)}
-                              <Input
-                                autoFocus
-                                type="search"
-                                maxLength={100}
-                                aria-label={`Giá trị lọc cho cột ${String(columnHeaders?.[column] || column)}`}
-                                value={filterDraft}
-                                onChange={(event) => setFilterDraft(event.target.value)}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Escape') setActiveFilterColumn('');
-                                }}
-                                placeholder="Nhập nội dung cần tìm…"
-                                className="mt-2 h-9 w-full rounded-md border border-slate-200 px-2.5 text-sm font-normal outline-none focus:border-[#7992dc]"
-                              />
-                            </label>
-                            <div className="mt-3 flex items-center justify-between gap-2">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={() => clearColumnFilter(column)}
-                                className="rounded-md px-2 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100"
-                              >
-                                Xóa lọc
-                              </Button>
-                              <Button
-                                type="submit"
-                                className="rounded-md bg-[#405bb0] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#334a98]"
-                              >
-                                Áp dụng
-                              </Button>
-                            </div>
-                          </form>
-                        )}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredRows.map((row) => (
-                    <tr key={row._id} className="hover:bg-[#f8faff]">
+                    <tr key={row._id} className="transition-colors hover:bg-indigo-50/30">
                       {!hasGroupedHeaders && (
-                        <td className="whitespace-nowrap px-3 py-3 font-medium text-slate-500">
+                        <td className="whitespace-nowrap px-3 py-3 font-medium text-slate-500 border-r border-slate-100">
                           {row.sheetName} · {row.rowNumber}
                         </td>
                       )}
                       {columns.map((column) => (
-                        <td key={column} className="max-w-64 px-3 py-3 text-slate-700">{String(row.values?.[column] ?? '—')}</td>
+                        <td key={column} className="max-w-64 px-3 py-2.5 text-slate-800 border-r border-slate-100">
+                          <span className="block truncate" title={String(row.values?.[column] ?? '—')}>
+                            {String(row.values?.[column] ?? '—')}
+                          </span>
+                        </td>
                       ))}
                     </tr>
                   ))}
                   {filteredRows.length === 0 && (
-                    <tr><td colSpan={columns.length + (hasGroupedHeaders ? 0 : 1)} className="px-4 py-8 text-center text-slate-500">Không tìm thấy dòng phù hợp trên trang này.</td></tr>
+                    <tr>
+                      <td colSpan={columns.length + (hasGroupedHeaders ? 0 : 1)} className="px-4 py-12 text-center text-xs font-medium text-slate-500">
+                        Không tìm thấy dòng phù hợp với bộ lọc đã chọn.
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </Table>
               {loadingMore && (
-                <div className="flex items-center justify-center gap-2 border-t border-slate-100 py-3 text-xs text-slate-500">
-                  <LoaderCircle size={15} className="animate-spin" /> Đang tải thêm dòng…
+                <div className="flex items-center justify-center gap-2 border-t border-slate-100 py-3.5 text-xs font-semibold text-slate-500 bg-slate-50/50">
+                  <LoaderCircle size={16} className="animate-spin text-indigo-600" /> Đang tải thêm dòng…
                 </div>
               )}
             </div>

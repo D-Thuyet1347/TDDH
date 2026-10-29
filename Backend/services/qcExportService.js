@@ -309,10 +309,100 @@ const loginToQcSite = async (page, config) => {
     throw new Error("Không tìm thấy nút đăng nhập; hãy cấu hình CSS_LOGIN_BUTTON trong .env.");
   }
   await loginButton.click();
-  await page.waitForTimeout(700);
+  await Promise.race([
+    page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {}),
+    passwordInput.waitFor({ state: "hidden", timeout: 15000 }).catch(() => {}),
+    page.waitForTimeout(2000),
+  ]);
+  await page.waitForLoadState("domcontentloaded").catch(() => {});
+  await page.waitForTimeout(600);
   if (await passwordInput.isVisible()) {
     throw new Error("Website QC chưa chấp nhận đăng nhập; hãy kiểm tra thông tin tài khoản.");
   }
+};
+
+const waitForOpenExportAndOpenModal = async (page, selectors, timeoutMs = 25000) => {
+  const deadline = Date.now() + Math.min(timeoutMs, 25000);
+
+  const exportFormIsVisible = async () => {
+    if (selectors.exportForm) {
+      const exportForm = page.locator(selectors.exportForm);
+      if (await firstVisible(exportForm)) return true;
+    }
+    if (selectors.factory) {
+      const factoryControl = page.locator(selectors.factory);
+      if (await firstVisible(factoryControl)) return true;
+    }
+    if (selectors.fromDate) {
+      const fromDateControl = page.locator(selectors.fromDate);
+      if (await firstVisible(fromDateControl)) return true;
+    }
+    if (selectors.exportForm) {
+      const dateInputs = page.locator(
+        `${selectors.exportForm} input[type="date"], ${selectors.exportForm} input[type="datetime-local"]`
+      );
+      if (await firstVisible(dateInputs)) return true;
+    }
+    return false;
+  };
+
+  if (await exportFormIsVisible()) return;
+
+  const candidateSelectors = [
+    selectors.openExport,
+    'button[onclick*="openExportModal"]',
+    'button[onclick*="openExport"]',
+    'a[onclick*="openExportModal"]',
+    'a[onclick*="openExport"]',
+    'button[onclick*="Export"]',
+    'button[onclick*="export"]',
+    'a[onclick*="Export"]',
+    'a[onclick*="export"]',
+    '[data-target="#exportExcelModal"]',
+    '[data-bs-target="#exportExcelModal"]',
+    '[data-target*="Export"]',
+    '[data-bs-target*="Export"]',
+    '#btnExport',
+    '#btnOpenExport',
+    '#btn-export',
+    '.btn-export',
+    'button.btn-export',
+    'a.btn-export',
+  ].filter(Boolean);
+
+  while (Date.now() < deadline) {
+    if (await exportFormIsVisible()) return;
+
+    for (const sel of candidateSelectors) {
+      try {
+        const btn = await firstVisible(page.locator(sel));
+        if (btn) {
+          await btn.click({ timeout: 2000 }).catch(() => {});
+          await page.waitForTimeout(600);
+          if (await exportFormIsVisible()) return;
+        }
+      } catch {}
+    }
+
+    try {
+      const textBtn =
+        (await firstVisible(page.getByRole("button", { name: /xuất excel|xuat excel|xuất dữ liệu|xuất|export/i }))) ||
+        (await firstVisible(page.getByRole("link", { name: /xuất excel|xuat excel|xuất dữ liệu|export/i }))) ||
+        (await firstVisible(page.locator('button:has-text("Xuất Excel"), a:has-text("Xuất Excel"), button:has-text("Export"), a:has-text("Export")')));
+
+      if (textBtn) {
+        await textBtn.click({ timeout: 2000 }).catch(() => {});
+        await page.waitForTimeout(600);
+        if (await exportFormIsVisible()) return;
+      }
+    } catch {}
+
+    await page.waitForTimeout(300);
+  }
+
+  if (await exportFormIsVisible()) return;
+
+  throw new Error("Không tìm thấy khu vực xuất Excel; hãy kiểm tra CSS_OPEN_EXPORT.");
 };
 
 const runQcExport = async (job, config) => {
@@ -357,6 +447,7 @@ const runQcExport = async (job, config) => {
     page.setDefaultNavigationTimeout(config.pageTimeoutMs);
 
     await loginToQcSite(page, { ...config, selectors });
+    await waitForOpenExportAndOpenModal(page, selectors, config.pageTimeoutMs);
     const exportFormIsVisible = async () => {
       const exportForm = page.locator(selectors.exportForm);
       return (await firstVisible(exportForm)) ||
@@ -365,7 +456,7 @@ const runQcExport = async (job, config) => {
         )));
     };
 
-    if (selectors.openExport) {
+    if (false && selectors.openExport) {
       if (!(await exportFormIsVisible())) {
         const openExport = await firstVisible(page.locator(selectors.openExport));
         if (!openExport) {
@@ -373,7 +464,7 @@ const runQcExport = async (job, config) => {
         }
         await openExport.click();
       }
-    } else if (!(await exportFormIsVisible())) {
+    } else if (false && !(await exportFormIsVisible())) {
       const exportLink = await firstVisible(
         page.getByRole("link", { name: /xuất|export/i })
       ) || await firstVisible(page.getByRole("button", { name: /xuất|export/i }));

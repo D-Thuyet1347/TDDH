@@ -15,8 +15,21 @@ const request = async (promise) => {
     const response = await promise;
     return response.data;
   } catch (error) {
-    const message = error.response?.data?.message || error.message || 'Không thể kết nối máy chủ';
-    throw new Error(message);
+    const backendMessage = error.response?.data?.message;
+    if (backendMessage) {
+      throw new Error(backendMessage);
+    }
+    const htmlSnippet = typeof error.response?.data === 'string' ? error.response.data : '';
+    if (
+      error.response?.status === 404 ||
+      htmlSnippet.includes('Cannot POST') ||
+      htmlSnippet.includes('Cannot GET')
+    ) {
+      throw new Error(
+        'Đường dẫn API đồng bộ chưa nhận được trên Backend (404). Vui lòng khởi động lại Backend (nhấn Ctrl+C rồi chạy lại "npm run dev" hoặc "npm start") để Backend nạp route mới.'
+      );
+    }
+    throw new Error(error.message || 'Không thể kết nối máy chủ');
   }
 };
 
@@ -74,15 +87,44 @@ export const disableQcAutoExport = (signal) =>
 export const getQcExportJob = (jobId, signal) =>
   request(axios.get(`${QC_API_URL}/exports/jobs/${encodeURIComponent(jobId)}`, { signal }));
 
-export const getReportRows = ({ reportId, sheet, limit = 50, offset = 0, signal }) =>
+export const getReportRows = ({
+  reportId,
+  sheet,
+  search = '',
+  filters = {},
+  limit = 100,
+  offset = 0,
+  signal,
+}) =>
   request(axios.get(`${QC_API_URL}/reports/${encodeURIComponent(reportId)}/rows`, {
-    params: { sheet, limit, offset },
+    params: {
+      sheet,
+      search: search || undefined,
+      filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined,
+      limit,
+      offset,
+    },
     signal,
   }));
 
 export const getReportQualitySummary = ({ reportId, signal }) =>
   request(axios.get(
     `${QC_API_URL}/reports/${encodeURIComponent(reportId)}/quality-summary`,
+    { signal }
+  ));
+
+export const getReportColumnValues = ({ reportId, sheet, signal }) =>
+  request(axios.get(
+    `${QC_API_URL}/reports/${encodeURIComponent(reportId)}/column-values`,
+    {
+      params: { sheet },
+      signal,
+    }
+  ));
+
+export const getOrderDemandColumnValues = ({ reportId, sheetName, signal }) =>
+  request(axios.get(
+    `${NC_API_URL}/reports/${encodeURIComponent(reportId)}/sheets/${encodeURIComponent(sheetName)}/column-values`,
     { signal }
   ));
 
@@ -133,3 +175,28 @@ export const deleteOrderDemandRow = ({ reportId, sheetName, rowId, signal }) =>
     `${NC_API_URL}/reports/${encodeURIComponent(reportId)}/sheets/${encodeURIComponent(sheetName)}/rows/${encodeURIComponent(rowId)}`,
     { signal }
   ));
+
+export const syncOrderDemandQc = async ({ reportId, qcReportId, signal } = {}) => {
+  const encId = encodeURIComponent(reportId || 'default');
+  const urls = [
+    `${NC_API_URL}/reports/${encId}/sync-qc`,
+    `${NC_API_URL}/sync-qc`,
+    `${QC_API_URL}/reports/${encId}/sync-qc`,
+    `${QC_API_URL}/sync-qc`,
+    `${API_URL}/api/sync-qc`,
+  ];
+
+  let lastError;
+  for (const url of urls) {
+    try {
+      return await request(axios.post(url, { reportId, qcReportId }, { signal }));
+    } catch (err) {
+      lastError = err;
+      if (err.message && err.message.includes('404')) {
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+};

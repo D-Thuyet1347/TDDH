@@ -17,7 +17,7 @@ import {
 } from "../services/qcExportService.js";
 
 const MAX_REPORTS_PER_PAGE = 100;
-const MAX_ROWS_PER_PAGE = 200;
+const MAX_ROWS_PER_PAGE = 30000;
 const MAX_IMPORTED_ROWS = 100000;
 const QC_COLUMN_GROUPS = [
   "THÔNG TIN CHUNG",
@@ -152,31 +152,143 @@ export const getReportRows = async (req, res, next) => {
     );
     const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
     const sheet = String(req.query.sheet || "");
-    const filter = { reportId: report._id };
+    const baseFilter = { reportId: report._id };
 
     if (sheet) {
       if (!report.sheets.some((item) => item.name === sheet)) {
         return res.status(400).json({ message: "Sheet không thuộc báo cáo này." });
       }
-      filter.sheetName = sheet;
+      baseFilter.sheetName = sheet;
     }
 
-    const [rows, total] = await Promise.all([
-      QcRow.find(filter)
+    const search = String(req.query.search || "").trim();
+    let parsedFilters = null;
+    if (req.query.filters) {
+      try {
+        parsedFilters = typeof req.query.filters === "string" ? JSON.parse(req.query.filters) : req.query.filters;
+      } catch {
+        parsedFilters = null;
+      }
+    }
+
+    const hasFilters = parsedFilters && Object.keys(parsedFilters).some((col) => {
+      const val = parsedFilters[col];
+      return Array.isArray(val) ? val.length > 0 : Boolean(String(val ?? "").trim());
+    });
+
+    const conditions = [];
+    if (hasFilters) {
+      for (const [col, val] of Object.entries(parsedFilters)) {
+        if (Array.isArray(val)) {
+          if (!val.length) continue;
+          if (val.includes("__NO_MATCH__")) {
+            conditions.push({ _id: null });
+            continue;
+          }
+          const hasBlank = val.some((v) => v === "__BLANK__" || v === "" || v === null || v === "(Trống)");
+          const nonBlank = val.filter((v) => v !== "__BLANK__" && v !== "" && v !== null && v !== undefined && v !== "(Trống)");
+          const orList = [];
+          if (nonBlank.length > 0) {
+            orList.push({ [`values.${col}`]: { $in: nonBlank } });
+          }
+          if (hasBlank) {
+            orList.push({ [`values.${col}`]: { $in: [null, "", "—", "-"] } });
+            orList.push({ [`values.${col}`]: { $exists: false } });
+          }
+          if (orList.length === 1) conditions.push(orList[0]);
+          else if (orList.length > 1) conditions.push({ $or: orList });
+        } else if (String(val ?? "").trim()) {
+          const regex = new RegExp(String(val).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+          conditions.push({ [`values.${col}`]: regex });
+        }
+      }
+    }
+
+    if (search) {
+      const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const sheetObj = report.sheets.find((s) => s.name === sheet);
+      const searchCols = sheetObj?.columns || [];
+      if (searchCols.length > 0) {
+        conditions.push({
+          $or: searchCols.map((c) => ({ [`values.${c}`]: searchRegex })),
+        });
+      }
+    }
+
+    const queryFilter = (hasFilters || search) && conditions.length > 0
+      ? { ...baseFilter, rowNumber: { $gt: 2 }, $and: conditions }
+      : baseFilter;
+
+    let headerRows = [];
+    if (offset === 0 && (hasFilters || search)) {
+      const headerFilter = { reportId: report._id, rowNumber: { $lte: 2 } };
+      if (sheet) headerFilter.sheetName = sheet;
+      headerRows = await QcRow.find(headerFilter)
+        .sort({ sheetName: 1, rowNumber: 1 })
+        .select("sheetName rowNumber values")
+        .lean();
+    }
+
+    const [dataRows, total] = await Promise.all([
+      QcRow.find(queryFilter)
         .sort({ sheetName: 1, rowNumber: 1 })
         .skip(offset)
         .limit(limit)
         .select("sheetName rowNumber values")
         .lean(),
-      QcRow.countDocuments(filter),
+      QcRow.countDocuments(queryFilter),
     ]);
 
     return res.json({
       sheets: report.sheets,
-      rows,
+      rows: headerRows.length > 0 ? [...headerRows, ...dataRows.filter((r) => !headerRows.some((h) => String(h._id) === String(r._id)))] : dataRows,
       total,
       limit,
       offset,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const getQcColumnValues = async (req, res, next) => {
+  try {
+    const { reportId } = req.params;
+    if (!isValidId(reportId)) {
+      return res.status(400).json({ message: "Mã báo cáo không hợp lệ." });
+    }
+
+    const report = await QcReport.findById(reportId).select("sheets reportType").lean();
+    if (!report) {
+      return res.status(404).json({ message: "Không tìm thấy báo cáo." });
+    }
+
+    const sheet = String(req.query.sheet || "");
+    const query = { reportId: report._id, rowNumber: { $gt: 2 } };
+    if (sheet) query.sheetName = sheet;
+
+    const rows = await QcRow.find(query).limit(30000).select("values").lean();
+    const columns = {};
+
+    for (const row of rows) {
+      const vals = row.values || {};
+      for (const [col, raw] of Object.entries(vals)) {
+        if (!columns[col]) {
+          columns[col] = { counts: {}, blanks: 0, total: 0 };
+        }
+        columns[col].total += 1;
+        const str = raw === null || raw === undefined ? "" : String(raw).trim();
+        if (!str || str === "—" || str === "-") {
+          columns[col].blanks += 1;
+        } else {
+          columns[col].counts[str] = (columns[col].counts[str] || 0) + 1;
+        }
+      }
+    }
+
+    return res.json({
+      totalRows: rows.length,
+      columns,
     });
   } catch (error) {
     return next(error);

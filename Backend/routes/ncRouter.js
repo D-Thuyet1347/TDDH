@@ -4,8 +4,10 @@ import {
   createNcRow,
   downloadNcReport,
   deleteNcRow,
+  getNcColumnValues,
   getNcRows,
   listNcReports,
+  syncNcWithQc,
   updateNcRow,
   uploadNcReport,
 } from "../controllers/ncController.js";
@@ -19,9 +21,19 @@ const upload = multer({
 ncRouter.get("/reports", listNcReports);
 ncRouter.post("/reports", upload.single("file"), uploadNcReport);
 ncRouter.get("/reports/:reportId/file", downloadNcReport);
+ncRouter.all("/reports/:reportId/sync-qc", syncNcWithQc);
+ncRouter.all("/sync-qc", syncNcWithQc);
 ncRouter.get(
   "/reports/:reportId/sheets/:sheetName/rows",
   getNcRows
+);
+ncRouter.get(
+  "/reports/:reportId/sheets/:sheetName/column-values",
+  getNcColumnValues
+);
+ncRouter.get(
+  "/reports/:reportId/column-values",
+  getNcColumnValues
 );
 ncRouter.post(
   "/reports/:reportId/sheets/:sheetName/rows",

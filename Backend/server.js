@@ -16,6 +16,7 @@ import { initializeQcAutoExport } from "./services/qcAutoExportService.js";
 import userRouter from "./routes/userRouter.js";
 import qcRouter from "./routes/qcRouter.js";
 import ncRouter from "./routes/ncRouter.js";
+import { syncNcWithQc } from "./controllers/ncController.js";
 
 const app = express();
 const port = Number.parseInt(process.env.PORT || "5000", 10);
@@ -70,6 +71,10 @@ app.use("/images", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/user", userRouter);
 app.use("/api/qc", qcRouter);
 app.use("/api/nc", ncRouter);
+app.all("/api/sync-qc", syncNcWithQc);
+app.all("/api/nc/reports/:reportId/sync-qc", syncNcWithQc);
+app.all("/api/qc/reports/:reportId/sync-qc", syncNcWithQc);
+app.all("/api/reports/:reportId/sync-qc", syncNcWithQc);
 
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
