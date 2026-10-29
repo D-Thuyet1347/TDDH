@@ -1,18 +1,33 @@
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue','Dancing Script',
-    'Helvetica', 'Arial', sans-serif,
-    sans-serif;
-
+  background-color: #f6f8fc;
+  color: #172033;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+::selection {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+*:focus-visible {
+  outline-color: #3b82f6;
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
-/* Thư viện antd */
 input.no-spinner::-webkit-inner-spin-button,
 input.no-spinner::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -30,26 +45,6 @@ input.no-spinner::-webkit-outer-spin-button {
 input.no-spinner {
   -moz-appearance: textfield;
 }
-.ant-picker-ok{
-  color: black;
-  border: none;
-  cursor: pointer;
-  margin-right: 10px;
-}
-.ant-picker-dropdown {
-  pointer-events: auto;
-}
-.ant-picker-dropdown .ant-picker-panel {
-  overscroll-behavior: none;
-}
-.ant-btn{
-  background-color: #f0f0f0;
-  border-radius: 5px;
-  border: none;
-  color: black;
-  cursor: pointer;
-}
-/* Hiệu ứng */
 @keyframes shakeM {
   0% { transform: translateX(0); }
   25% { transform: translateX(3px); }

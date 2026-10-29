@@ -13,6 +13,12 @@ import {
   getReports,
 } from '../AllAPIs';
 import QcLayout from '../components/QcLayout';
+import { Alert } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Table } from '../components/ui/table';
 import { fileSize, nf, vnDateTime } from '../utils/ultils';
 
 // Giữ nguyên trạng thái Job theo Backend HRC2 v6.4.
@@ -36,38 +42,38 @@ function StatusPill({ status }) {
   const data = getJobStatus(status);
   const Icon = data.icon;
   return (
-    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${data.color}`}>
+    <Badge className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border-0 px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${data.color}`}>
       <Icon size={12} className={ACTIVE_STATUSES.has(status) ? 'animate-spin' : ''} aria-hidden="true" />
       {data.label}
-    </span>
+    </Badge>
   );
 }
 
 function StatCard({ icon: Icon, label, value, description, iconClass, loading }) {
   return (
-    <article className="group min-w-0 rounded-[20px] border border-[#e5e9f2] bg-white p-4 shadow-[0_5px_24px_rgba(24,40,80,0.045)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_34px_rgba(24,40,80,0.085)] sm:p-5">
+    <Card className="group min-w-0 rounded-2xl border-slate-200/80 p-5 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_40px_rgba(15,23,42,0.08)] sm:p-6">
       <div className="flex items-start justify-between gap-3">
-        <span className="text-[12px] font-semibold leading-5 text-slate-500">{label}</span>
-        <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] ${iconClass}`}>
+        <span className="text-[13px] font-medium leading-5 text-slate-500">{label}</span>
+        <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${iconClass}`}>
           <Icon size={19} aria-hidden="true" />
         </span>
       </div>
-      <div className="mt-2 text-[clamp(25px,2.5vw,34px)] font-extrabold tracking-tight text-slate-800" aria-live="polite">
+      <div className="mt-4 text-[clamp(28px,2.5vw,36px)] font-bold tracking-tight text-slate-900" aria-live="polite">
         {loading ? <span className="inline-block h-9 w-24 animate-pulse rounded-lg bg-slate-100" /> : value}
       </div>
-      <p className="mt-2 min-h-[18px] text-[11px] font-medium text-slate-400">{description}</p>
-    </article>
+      <p className="mt-2 min-h-[18px] text-xs font-medium text-slate-400">{description}</p>
+    </Card>
   );
 }
 
 function SectionHeading({ icon: Icon, title, subtitle, action }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-6">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100/80 px-5 py-4 sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef3ff] text-[#4c63ba]"><Icon size={17} /></span>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Icon size={18} /></span>
         <div className="min-w-0">
-          <h2 className="!m-0 text-[15px] font-extrabold text-slate-800">{title}</h2>
-          {subtitle && <p className="mt-1 text-[11px] text-slate-400">{subtitle}</p>}
+          <h2 className="!m-0 text-sm font-semibold text-slate-900">{title}</h2>
+          {subtitle && <p className="mt-1 text-xs text-slate-400">{subtitle}</p>}
         </div>
       </div>
       {action}
@@ -92,7 +98,7 @@ function ReportTable({ reports, loading, error, search }) {
   }
   return (
     <div className="w-full overflow-x-auto">
-      <table className="w-full min-w-[570px] border-collapse text-left text-[12px]">
+      <Table wrapperClassName="contents" className="w-full min-w-[570px] border-collapse text-left text-[12px]">
         <thead className="bg-[#f8faff] text-[11px] font-bold text-slate-500">
           <tr>
             <th className="px-5 py-3 font-bold sm:px-6">Tên file Excel</th>
@@ -121,7 +127,7 @@ function ReportTable({ reports, loading, error, search }) {
             </tr>
           ))}
         </tbody>
-      </table>
+      </Table>
     </div>
   );
 }
@@ -207,71 +213,74 @@ export default function Dashboard() {
 
   return (
     <QcLayout>
-    <div className="min-w-0 space-y-5 font-sans text-slate-800 sm:space-y-6">
-      {/* Header: cùng cách dựng Tailwind với SignInPage */}
-      <header className="flex flex-wrap items-start justify-between gap-4">
+    <div className="min-w-0  space-y-6 font-sans text-slate-800 sm:space-y-7">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#526bb9]">
-            <LayoutDashboard size={14} /> Hệ thống quản lý chất lượng
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-blue-700">
+            <LayoutDashboard size={5} /> Trung tâm vận hành
           </div>
-          <h1 className="text-[clamp(25px,3vw,34px)] font-extrabold leading-tight tracking-tight text-[#1e2944]">Dashboard HRC2</h1>
-          <p className="mt-2 text-[12px] leading-relaxed text-slate-500 sm:text-[13px]">Theo dõi báo cáo Excel đã tải lên, dữ liệu từng sheet và kết nối MongoDB.</p>
+          <h1 className="text-[clamp(28px,3vw,36px)] font-bold leading-tight tracking-tight text-slate-950">Tổng quan</h1>
+          <p className="mt-2 text-sm leading-relaxed text-slate-500">Tổng hợp báo cáo, dữ liệu và tình trạng hệ thống QC.</p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={reload}
           disabled={refreshing}
-          className="inline-flex h-10 items-center gap-2 rounded-full border border-[#dce4f5] bg-white px-4 text-[12px] font-bold text-[#3b559a] shadow-sm transition hover:border-[#abbde6] hover:bg-[#f4f7ff] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-10 items-center gap-2 rounded-xl border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> Làm mới
-        </button>
+        </Button>
       </header>
 
-      {/* Hero */}
-      <section className="relative overflow-hidden rounded-[22px] bg-gradient-to-r from-[#142f55] via-[#294d86] to-[#526bc4] p-5 text-white shadow-[0_16px_35px_rgba(38,72,127,0.16)] sm:p-7">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-64 w-64 rounded-full border-[44px] border-white/[0.055]" />
-        <div aria-hidden="true" className="pointer-events-none absolute bottom-[-95px] right-24 h-56 w-56 rounded-full bg-[#8cb5ff]/[0.12] blur-xl" />
-        <div className="relative flex flex-wrap items-center justify-between gap-6">
-          <div className="max-w-xl">
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-bold tracking-wider text-[#e6f1ff]">
+      <section className="relative overflow-hidden rounded-[28px] bg-[#101b34] p-6 text-white shadow-[0_24px_65px_rgba(15,23,42,0.18)] sm:p-9">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-36 h-96 w-96 rounded-full bg-blue-500/25 blur-3xl" />
+        <div aria-hidden="true" className="pointer-events-none absolute bottom-[-170px] right-[28%] h-72 w-72 rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="relative flex flex-wrap items-end justify-between gap-8">
+          <div className="max-w-2xl">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.07] px-3 py-1.5 text-[10px] font-semibold tracking-[0.12em] text-blue-100">
               <ShieldCheck size={13} /> QUALITY CONTROL · HRC2
             </span>
-            <h2 className="!mb-0 !mt-3 text-[21px] font-extrabold leading-tight tracking-tight text-white sm:text-[26px]">Quản lý dữ liệu chất lượng<br className="hidden sm:block" /> tập trung và trực quan</h2>
-            <p className="mt-3 max-w-lg text-[12px] leading-6 text-[#dce9ff]">Tải file Excel QC lên, lưu file cùng từng dòng dữ liệu vào MongoDB và tra cứu lại bất kỳ lúc nào.</p>
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <Link to="/export" className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-4 text-[12px] font-extrabold text-[#294d86] transition hover:-translate-y-px hover:bg-[#edf3ff]">
-                <ArrowDownToLine size={15} /> Tải Excel lên <ArrowRight size={14} />
-              </Link>
-              <Link to="/data" className="inline-flex h-10 items-center gap-2 rounded-full border border-white/25 px-4 text-[12px] font-bold text-white transition hover:bg-white/10">
-                Xem dữ liệu <TableProperties size={15} />
-              </Link>
+            <h2 className="!mb-0 !mt-4 text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">Dữ liệu chất lượng,<br className="hidden sm:block" /> rõ ràng trong từng quyết định.</h2>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">Quản lý báo cáo QC, theo dõi dữ liệu theo sheet và lưu trữ an toàn trong một không gian tập trung.</p>
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Button asChild variant="secondary" className="h-10 rounded-xl bg-white px-4 text-xs font-semibold text-slate-900 hover:bg-blue-50">
+                <Link to="/export"><ArrowDownToLine size={15} /> Nhập báo cáo <ArrowRight size={14} /></Link>
+              </Button>
+              <Button asChild variant="outline" className="h-10 rounded-xl border-white/20 bg-white/[0.04] px-4 text-xs font-semibold text-white hover:bg-white/10">
+                <Link to="/data">Mở dữ liệu <TableProperties size={15} /></Link>
+              </Button>
             </div>
           </div>
-          <div className="flex min-w-[190px] flex-col gap-2 rounded-[17px] border border-white/20 bg-white/10 p-4 backdrop-blur-sm sm:min-w-[205px]">
-            <span className="text-[11px] font-semibold text-[#dce9ff]">Trạng thái MongoDB Atlas</span>
-            <div className="flex items-center gap-2 text-[14px] font-extrabold">
-              {mongoOk ? <Wifi size={18} className="text-[#a7f6d2]" /> : <WifiOff size={18} className="text-[#ffd3c8]" />}
-              {mongoOk ? 'Đã kết nối' : health === null && refreshing ? 'Đang kiểm tra' : 'Chưa kết nối'}
+          <div className="min-w-[220px] rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs font-medium text-slate-300">MongoDB Atlas</span>
+              {mongoOk ? <Wifi size={17} className="text-emerald-300" /> : <WifiOff size={17} className="text-rose-300" />}
             </div>
-            <span className="text-[10px] text-[#dce9ff]">Database: {health?.database || summary?.database || '—'}</span>
+            <div className="mt-3 flex items-center gap-2 text-sm font-semibold text-white">
+              <span className={`h-2 w-2 rounded-full ${mongoOk ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+              {mongoOk ? 'Đang kết nối' : health === null && refreshing ? 'Đang kiểm tra' : 'Chưa kết nối'}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">Database · {health?.database || summary?.database || '—'}</p>
           </div>
         </div>
       </section>
 
       {/* Lỗi nào xảy ra thì chỉ báo phần tương ứng, các phần khác vẫn hoạt động */}
       {Object.keys(errors).length > 0 && (
-        <div role="alert" className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] text-rose-700">
+        <Alert variant="destructive" className="flex items-start gap-3 rounded-xl px-4 py-3 text-[12px]">
           <CircleAlert size={17} className="mt-0.5 shrink-0" />
           <div><strong>Không tải được một phần dữ liệu:</strong> {Object.values(errors).join(' · ')}</div>
-        </div>
+        </Alert>
       )}
 
-      <section aria-label="Thống kê tổng quan" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4">
+      <section aria-label="Thống kê tổng quan" className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         {metrics.map(metric => <StatCard key={metric.label} {...metric} loading={loading && !errors[metric.dependsOn]} />)}
       </section>
 
       <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(295px,1fr)]">
-        <div className="min-w-0 overflow-hidden rounded-[20px] border border-[#e5e9f2] bg-white shadow-[0_5px_24px_rgba(24,40,80,0.045)]">
+        <Card className="min-w-0 overflow-hidden rounded-[20px] border-[#e5e9f2] shadow-[0_5px_24px_rgba(24,40,80,0.045)]">
           <SectionHeading
             icon={FileSpreadsheet}
             title="Báo cáo Excel gần đây"
@@ -281,7 +290,7 @@ export default function Dashboard() {
           <div className="px-5 py-3 sm:px-6">
             <label className="relative block max-w-[360px]" htmlFor="dashboard-search">
               <Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
+              <Input
                 id="dashboard-search"
                 value={search}
                 maxLength={80}
@@ -292,10 +301,10 @@ export default function Dashboard() {
             </label>
           </div>
           <ReportTable reports={reports} loading={loading} error={errors.reports} search={search} />
-        </div>
+        </Card>
 
         <div className="space-y-4">
-          <div className="overflow-hidden rounded-[20px] border border-[#e5e9f2] bg-white shadow-[0_5px_24px_rgba(24,40,80,0.045)]">
+          <Card className="overflow-hidden rounded-[20px] border-[#e5e9f2] shadow-[0_5px_24px_rgba(24,40,80,0.045)]">
             <SectionHeading icon={Server} title="Tình trạng hệ thống" subtitle="Theo dõi kết nối và đồng bộ" />
             <div className="space-y-4 p-5 sm:p-6">
               <div className="flex items-center justify-between gap-3 rounded-xl bg-[#f7faff] px-3.5 py-3">
@@ -310,9 +319,9 @@ export default function Dashboard() {
               </div>
               <p className="text-[11px] leading-relaxed text-slate-400">Các chỉ số là số báo cáo và dòng Excel đã lưu, không phải tỷ lệ chất lượng sản phẩm.</p>
             </div>
-          </div>
+          </Card>
 
-          <div className="overflow-hidden rounded-[20px] border border-[#e5e9f2] bg-white shadow-[0_5px_24px_rgba(24,40,80,0.045)]">
+          <Card className="overflow-hidden rounded-[20px] border-[#e5e9f2] shadow-[0_5px_24px_rgba(24,40,80,0.045)]">
             <SectionHeading icon={TrendingUp} title="Tình trạng nhập dữ liệu" subtitle={`Tổng hợp ${nf(sampleTotal)} báo cáo gần nhất`} />
             <div className="px-5 pb-5 pt-4 sm:px-6">
               <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100" role="img" aria-label={`${completedJobs} hoàn thành, ${activeJobs} đang xử lý, ${failedJobs} lỗi hoặc chờ lưu trên ${sampleTotal} tác vụ gần nhất`}>
@@ -334,7 +343,7 @@ export default function Dashboard() {
               </div>
               <p className="mt-4 text-[10px] text-slate-400">Thống kê trên tối đa 100 báo cáo nhập gần nhất, không phải toàn bộ lịch sử.</p>
             </div>
-          </div>
+          </Card>
         </div>
       </section>
 

@@ -53,11 +53,160 @@ const firstVisible = async (locator) => {
   return null;
 };
 
+const normalizeFieldText = (value) =>
+  value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .toLowerCase();
+
+const getDateFieldDetails = async (control) => control.evaluate((element) => {
+  const labels = [...(element.labels || [])].map((label) => label.textContent || "");
+  let parent = element.parentElement;
+  while (parent && parent !== element.form) {
+    const parentLabels = [...parent.querySelectorAll("label")];
+    if (parentLabels.length) {
+      if (parentLabels.length === 1) labels.push(parentLabels[0].textContent || "");
+      break;
+    }
+    parent = parent.parentElement;
+  }
+
+  const attributes = [
+    element.id,
+    element.name,
+    element.className,
+    element.getAttribute("placeholder"),
+    element.getAttribute("aria-label"),
+    element.getAttribute("title"),
+    ...[...element.attributes]
+      .filter((attribute) => attribute.name.startsWith("data-"))
+      .map((attribute) => attribute.value),
+  ];
+  return {
+    type: (element.getAttribute("type") || "text").toLowerCase(),
+    text: [...attributes, ...labels].filter(Boolean).join(" "),
+  };
+});
+
+const getDateFieldDirection = (text) => {
+  const normalized = normalizeFieldText(text);
+  const isStart = /\b(start|from|begin|since)\b|ngay bat dau|tu ngay/.test(normalized);
+  const isEnd = /\b(end|to|until|finish|through)\b|ket thuc|den ngay/.test(normalized);
+  return { isStart, isEnd };
+};
+
+const waitForDateControl = async (
+  page,
+  selector,
+  exportFormSelector,
+  direction,
+  label,
+  timeoutMs
+) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (selector) {
+      const configuredControl = await firstVisible(page.locator(selector));
+      if (configuredControl) return configuredControl;
+    }
+
+    const form = page.locator(exportFormSelector || "body");
+    const inputs = form.locator("input");
+    const candidates = [];
+    for (let index = 0; index < await inputs.count(); index += 1) {
+      const control = inputs.nth(index);
+      if (!(await control.isVisible())) continue;
+      const details = await getDateFieldDetails(control);
+      const fieldDirection = getDateFieldDirection(details.text);
+      const isDateInput = ["date", "datetime-local", "datetime"].includes(details.type);
+      const mentionsDate = /\b(date|time|datepicker|datetime)\b|ngay|thoi gian/.test(
+        normalizeFieldText(details.text)
+      );
+      if (isDateInput || mentionsDate || fieldDirection.isStart || fieldDirection.isEnd) {
+        candidates.push({ control, ...fieldDirection });
+      }
+    }
+
+    const matchingCandidates = candidates.filter((candidate) =>
+      direction === "start"
+        ? candidate.isStart && !candidate.isEnd
+        : candidate.isEnd && !candidate.isStart
+    );
+    if (matchingCandidates.length === 1) return matchingCandidates[0].control;
+
+    if (
+      matchingCandidates.length === 0 &&
+      candidates.length === 2 &&
+      candidates.every((candidate) => !candidate.isStart && !candidate.isEnd)
+    ) {
+      return candidates[direction === "start" ? 0 : 1].control;
+    }
+
+    await page.waitForTimeout(Math.min(100, deadline - Date.now()));
+  }
+  throw new Error(
+    `Không tìm thấy trường ${label} trong form xuất. Selector hiện tại: "${selector || "(chưa cấu hình)"}"; ` +
+    "hãy cấu hình CSS_FROM_DATE/CSS_TO_DATE hoặc kiểm tra nhãn trường ngày trên website QC."
+  );
+};
+
+const isQcFactorySelect = async (control) => {
+  const tagName = await control.evaluate((element) => element.tagName.toLowerCase());
+  if (tagName !== "select") return false;
+
+  const options = await control.locator("option").evaluateAll((items) =>
+    items.map((option) => ({
+      value: option.value.trim().toLocaleLowerCase(),
+      label: (option.label || option.textContent).trim().toLocaleLowerCase(),
+    }))
+  );
+  return QC_FACTORY_OPTIONS.every(({ value, label }) =>
+    options.some(
+      (option) =>
+        option.value === value.toLocaleLowerCase() ||
+        option.label === label.toLocaleLowerCase()
+    )
+  );
+};
+
+const waitForFactoryControl = async (page, selector, exportFormSelector, timeoutMs) => {
+  const deadline = Date.now() + timeoutMs;
+  const configuredControls = page.locator(selector);
+  const exportFormControls = page.locator(`${exportFormSelector} select`);
+
+  while (Date.now() < deadline) {
+    const configuredCount = await configuredControls.count();
+    for (let index = 0; index < configuredCount; index += 1) {
+      const control = configuredControls.nth(index);
+      if (await isQcFactorySelect(control)) return control;
+      if (
+        await control.evaluate((element) => element.tagName.toLowerCase()) !== "select" &&
+        await control.isVisible()
+      ) {
+        return control;
+      }
+    }
+
+    const formControlCount = await exportFormControls.count();
+    for (let index = 0; index < formControlCount; index += 1) {
+      const control = exportFormControls.nth(index);
+      if (await isQcFactorySelect(control)) return control;
+    }
+    await page.waitForTimeout(Math.min(100, deadline - Date.now()));
+  }
+
+  throw new Error(
+    `Không tìm thấy trường nhà máy trong form xuất; hãy kiểm tra CSS_FACTORY (hiện tại: ${selector}).`
+  );
+};
+
 const fillControl = async (page, selector, value, label) => {
   if (!selector) {
     throw new Error(`Chưa cấu hình selector ${label}.`);
   }
-  const controls = page.locator(selector);
+  const controls = typeof selector === "string" ? page.locator(selector) : selector;
   const count = await controls.count();
   let control = null;
   let selectControl = null;
@@ -170,6 +319,26 @@ const runQcExport = async (job, config) => {
   if (getMissingQcExportSettings(config).length) {
     throw new Error("Thiếu cấu hình website QC; hãy kiểm tra QC_SITE_URL, QC_USERNAME và QC_PASSWORD trong .env.");
   }
+  const configuredSelectors = config.selectors || {};
+  const getSelector = (name, fallback = "") =>
+    typeof configuredSelectors[name] === "string" && configuredSelectors[name].trim()
+      ? configuredSelectors[name].trim()
+      : fallback;
+  const selectors = {
+    loginUsername: getSelector("loginUsername"),
+    loginPassword: getSelector("loginPassword"),
+    loginButton: getSelector("loginButton"),
+    openExport: getSelector("openExport", 'button[onclick="openExportModal()"]'),
+    exportForm: getSelector("exportForm", "#exportExcelModal"),
+    factory: getSelector("factory", "#expFactory"),
+    fromDate: getSelector("fromDate", "#expStartDate"),
+    toDate: getSelector("toDate", "#expEndDate"),
+    coilIds: getSelector("coilIds"),
+    downloadButton: getSelector(
+      "downloadButton",
+      'button[onclick="executeExportExcel()"]'
+    ),
+  };
   const siteUrl = new URL(config.siteUrl);
   if (!["http:", "https:"].includes(siteUrl.protocol) || siteUrl.username || siteUrl.password) {
     throw new Error("QC_SITE_URL phải là địa chỉ HTTP(S) hợp lệ và không chứa thông tin đăng nhập.");
@@ -187,14 +356,24 @@ const runQcExport = async (job, config) => {
     page.setDefaultTimeout(config.pageTimeoutMs);
     page.setDefaultNavigationTimeout(config.pageTimeoutMs);
 
-    await loginToQcSite(page, config);
-    if (config.selectors.openExport) {
-      const openExport = await firstVisible(page.locator(config.selectors.openExport));
-      if (!openExport) {
-        throw new Error("Không tìm thấy khu vực xuất Excel; hãy kiểm tra CSS_OPEN_EXPORT.");
+    await loginToQcSite(page, { ...config, selectors });
+    const exportFormIsVisible = async () => {
+      const exportForm = page.locator(selectors.exportForm);
+      return (await firstVisible(exportForm)) ||
+        (await firstVisible(exportForm.locator(
+          'input[type="date"], input[type="datetime-local"]'
+        )));
+    };
+
+    if (selectors.openExport) {
+      if (!(await exportFormIsVisible())) {
+        const openExport = await firstVisible(page.locator(selectors.openExport));
+        if (!openExport) {
+          throw new Error("Không tìm thấy khu vực xuất Excel; hãy kiểm tra CSS_OPEN_EXPORT.");
+        }
+        await openExport.click();
       }
-      await openExport.click();
-    } else if (!(await firstVisible(page.locator(config.selectors.factory)))) {
+    } else if (!(await exportFormIsVisible())) {
       const exportLink = await firstVisible(
         page.getByRole("link", { name: /xuất|export/i })
       ) || await firstVisible(page.getByRole("button", { name: /xuất|export/i }));
@@ -204,21 +383,39 @@ const runQcExport = async (job, config) => {
       await exportLink.click();
     }
 
-    await page.locator(config.selectors.factory).first().waitFor({
-      state: "attached",
-      timeout: config.pageTimeoutMs,
-    });
-    await fillControl(page, config.selectors.factory, job.factory, "nhà máy");
-    await fillControl(page, config.selectors.fromDate, job.fromDate, "ngày bắt đầu");
-    await fillControl(page, config.selectors.toDate, job.toDate, "ngày kết thúc");
+    const factoryControl = await waitForFactoryControl(
+      page,
+      selectors.factory,
+      selectors.exportForm,
+      config.pageTimeoutMs
+    );
+    const fromDateControl = await waitForDateControl(
+      page,
+      selectors.fromDate,
+      selectors.exportForm,
+      "start",
+      "ngày bắt đầu",
+      config.pageTimeoutMs
+    );
+    const toDateControl = await waitForDateControl(
+      page,
+      selectors.toDate,
+      selectors.exportForm,
+      "end",
+      "ngày kết thúc",
+      config.pageTimeoutMs
+    );
+    await fillControl(page, factoryControl, job.factory, "nhà máy");
+    await fillControl(page, fromDateControl, job.fromDate, "ngày bắt đầu");
+    await fillControl(page, toDateControl, job.toDate, "ngày kết thúc");
     if (job.coilIds) {
-      if (!config.selectors.coilIds) {
+      if (!selectors.coilIds) {
         throw new Error("Mã cuộn đã nhập nhưng chưa cấu hình CSS_COIL_IDS.");
       }
-      await fillControl(page, config.selectors.coilIds, job.coilIds, "mã cuộn");
+      await fillControl(page, selectors.coilIds, job.coilIds, "mã cuộn");
     }
 
-    const downloadButton = await firstVisible(page.locator(config.selectors.downloadButton));
+    const downloadButton = await firstVisible(page.locator(selectors.downloadButton));
     if (!downloadButton) {
       throw new Error("Không tìm thấy nút tải Excel; hãy kiểm tra CSS_DOWNLOAD_BUTTON.");
     }
@@ -405,7 +602,7 @@ const ensureQcExportReport = async (requestedReportId) => {
   return { reportId: report._id.toString(), filename: path.parse(report.filename).name };
 };
 
-export const createExportJob = async (input) => {
+export const validateQcExportInput = (input) => {
   const config = getQcExportConfig();
   const missingSettings = getMissingQcExportSettings(config);
   if (missingSettings.length) {
@@ -469,7 +666,13 @@ export const createExportJob = async (input) => {
     error.status = 400;
     throw error;
   }
+  return { factory, reportId: targetReportId, fromDate, toDate, coilIds };
+};
 
+export const createExportJob = async (input) => {
+  const { factory, reportId, fromDate, toDate, coilIds } =
+    validateQcExportInput(input);
+  const config = getQcExportConfig();
   const pendingJobs = [...jobs.values()].filter(
     (job) => job.status === "queued" || job.status === "running"
   ).length;
@@ -479,7 +682,7 @@ export const createExportJob = async (input) => {
     throw error;
   }
 
-  const targetReport = await ensureQcExportReport(targetReportId);
+  const targetReport = await ensureQcExportReport(reportId);
   const now = new Date();
   const job = {
     id: randomUUID(),

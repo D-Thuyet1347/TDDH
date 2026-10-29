@@ -1,9 +1,12 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { registerUser } from "../APIs/userApi";
-import { FaRegEye, FaRegEyeSlash } from "react-icons/fa6";
-import { IoMdCheckmarkCircleOutline } from "react-icons/io";
-import { errorToast, successToast,  } from "../utils/toast";
+import { CheckCircle2, Eye, EyeOff, FileSpreadsheet } from "lucide-react";
+import { errorToast, successToast } from "../utils/toast";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Checkbox } from "../components/ui/checkbox";
+import { Input } from "../components/ui/input";
 
 const SignUpPage = () => {
   const navigate = useNavigate();
@@ -50,13 +53,23 @@ const SignUpPage = () => {
 
   return (
     
-    <div className="flex justify-center items-center h-screen bg-gradient-to-r">
-      <div className="bg-white p-8 rounded-lg shadow-lg w-96 text-center">
-        <h2 className="text-2xl font-semibold text-gray-700 mb-4">Đăng ký</h2>
-        <form onSubmit={handleSignUp}>
-          <div className="mb-4">
-            <label className="block text-left mb-[5px] text-gray-600">Tên đăng nhập:</label>
-            <input
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f3f6fb] px-4 py-10">
+      <div aria-hidden="true" className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-blue-200/50 blur-3xl" />
+      <div aria-hidden="true" className="pointer-events-none absolute -bottom-40 -right-24 h-96 w-96 rounded-full bg-indigo-200/40 blur-3xl" />
+      <Card className="relative w-full max-w-md overflow-hidden rounded-[28px] border-white/80 shadow-[0_30px_90px_rgba(15,23,42,0.12)]">
+        <CardHeader className="px-7 pb-5 pt-8 text-left sm:px-9 sm:pt-10">
+          <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
+            <FileSpreadsheet size={22} />
+          </span>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">HRC2 QC · Data Center</p>
+          <CardTitle className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Tạo tài khoản</CardTitle>
+          <p className="mt-2 text-sm text-slate-500">Điền thông tin để bắt đầu sử dụng hệ thống.</p>
+        </CardHeader>
+        <CardContent className="px-7 pb-8 sm:px-9 sm:pb-10">
+        <form onSubmit={handleSignUp} className="space-y-4">
+          <div>
+            <label className="mb-2 block text-left text-sm font-medium text-slate-700">Tên đăng nhập</label>
+            <Input
               type="text"
               autoComplete="username"
               value={username}
@@ -64,38 +77,42 @@ const SignUpPage = () => {
               placeholder="Tên đăng nhập"
               minLength={3}
               maxLength={32}
-              className="w-full p-3 border border-gray-300 rounded-md"
+              className="h-12 rounded-xl border-slate-200 bg-slate-50/70 px-4"
               required
             />
           </div>
 
-          <div className="relative mb-4">
-            <label className="block text-left mb-[5px] text-gray-600">Nhập mật khẩu:</label>
-            <input
+          <div className="relative">
+            <label className="mb-2 block text-left text-sm font-medium text-slate-700">Mật khẩu</label>
+            <Input
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Mật khẩu"
-              className="w-full p-3 border border-gray-300 rounded-md "
+              className="h-12 rounded-xl border-slate-200 bg-slate-50/70 px-4 pr-12"
               onFocus={() => setShowPasswordRequirements(true)}
               onBlur={() => setShowPasswordRequirements(false)}
               required
             />
-            <span
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 mt-[18px] text-gray-500 cursor-pointer"
+              className="absolute right-2 top-8 text-slate-400 hover:bg-transparent hover:text-slate-700"
             >
-              {showPassword ? <FaRegEye /> : <FaRegEyeSlash />}
-            </span>
+              {showPassword ? <Eye size={16} /> : <EyeOff size={16} />}
+            </Button>
 
             {showPasswordRequirements && (
-              <div className="bg-gray-100 p-3 mt-2 rounded-md text-sm text-left">
+              <div className="mt-3 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50 p-3 text-left text-xs">
                 {passwordRequirements.map((req) => (
                   <div
                     key={req.id}
-                    className={`flex items-center ${req.validator(password) ? "text-green-500" : "text-gray-500"}`}
+                    className={`flex items-center ${req.validator(password) ? "text-emerald-600" : "text-slate-500"}`}
                   >
-                    <IoMdCheckmarkCircleOutline className="mr-2" />
+                    <CheckCircle2 className="mr-2" size={16} />
                     {req.label}
                   </div>
                 ))}
@@ -103,48 +120,53 @@ const SignUpPage = () => {
             )}
           </div>
 
-          <div className="relative mb-4">
-            <label className="block text-left mb-[5px] text-gray-600">Xác nhận mật khẩu:</label>
-            <input
+          <div className="relative">
+            <label className="mb-2 block text-left text-sm font-medium text-slate-700">Xác nhận mật khẩu</label>
+            <Input
               type={showConfirmPassword ? "text" : "password"}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Xác nhận mật khẩu"
-              className="w-full p-3 border border-gray-300 rounded-md"
+              className="h-12 rounded-xl border-slate-200 bg-slate-50/70 px-4 pr-12"
               required
             />
-            <span
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={showConfirmPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              className="absolute right-4 bottom-[15px] text-gray-500 cursor-pointer"
+              className="absolute right-2 top-8 text-slate-400 hover:bg-transparent hover:text-slate-700"
             >
-              {showConfirmPassword ? <FaRegEye /> : <FaRegEyeSlash />}
-            </span>
+              {showConfirmPassword ? <Eye size={16} /> : <EyeOff size={16} />}
+            </Button>
           </div>
 
-          <div className="flex items-center text-center  mb-4">
-            <input type="checkbox" id="checkPolicy" className="mr-2 mt-[-17px]" required />
-            <label htmlFor="checkPolicy" className="text-sm text-gray-600">
+          <div className="flex items-start gap-2 pt-1 text-left">
+            <Checkbox id="checkPolicy" className="mt-0.5" required />
+            <label htmlFor="checkPolicy" className="text-xs leading-5 text-slate-500">
               Tôi đồng ý với các điều khoản và chính sách của chúng tôi
             </label>
           </div>
 
-          <button
+          <Button
             type="submit"
             disabled={loading || !username.trim() || !password || !confirmPassword}
-            className="w-full bg-blue-500 text-white p-3 rounded-md font-bold hover:bg-blue-600 transition disabled:bg-gray-300"
+            className="mt-1 h-12 w-full rounded-xl bg-blue-600 font-semibold shadow-md shadow-blue-600/15 hover:bg-blue-700 disabled:bg-slate-300"
           >
             {loading ? "Đang tạo tài khoản..." : "Đăng ký"}
-          </button>
+          </Button>
         </form>
 
-        <p className="mt-4 text-sm text-gray-600">
+        <p className="mt-5 text-center text-sm text-slate-500">
           Đã có tài khoản?{" "}
-          <span onClick={() => navigate("/sign-in")} className="text-blue-500 font-semibold cursor-pointer">
+          <button type="button" onClick={() => navigate("/sign-in")} className="font-semibold text-blue-700 hover:underline">
             Đăng nhập
-          </span>
+          </button>
         </p>
-      </div>
-    </div>
+        </CardContent>
+      </Card>
+    </main>
   );
 };
 

@@ -1,9 +1,12 @@
 import React, { useContext, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { FaRegEye, FaRegEyeSlash } from "react-icons/fa6";
+import { useNavigate } from "react-router-dom";
+import { Eye, EyeOff, FileSpreadsheet } from "lucide-react";
 import { AuthContext } from "../context/AuthContext";
 import { errorToast, successToast } from "../utils/toast";
 import anh from "../img/Background.png";
+import { Button } from "../components/ui/button";
+import { Checkbox } from "../components/ui/checkbox";
+import { Input } from "../components/ui/input";
 const SignInPage = () => {
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -41,43 +44,42 @@ const SignInPage = () => {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#b1bff9] bg-[length:80px_80px] px-3 py-[18px] font-sans md:px-[18px] md:py-10">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f3f6fb] px-4 py-8 font-sans sm:px-8">
+      <div aria-hidden="true" className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-blue-200/50 blur-3xl" />
+      <div aria-hidden="true" className="pointer-events-none absolute -bottom-40 -right-24 h-96 w-96 rounded-full bg-indigo-200/40 blur-3xl" />
       <section
         aria-label="Đăng nhập tài khoản"
-        className="grid w-full max-w-[450px] grid-cols-1 overflow-hidden rounded-[22px] bg-white shadow-[0_18px_46px_rgba(66,78,156,0.18)] md:aspect-[650/418] md:min-h-[430px] md:max-w-[1060px] md:grid-cols-[51%_49%] md:w-[82vw]"
+        className="relative grid w-full max-w-5xl overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.14)] md:min-h-[590px] md:grid-cols-[1.05fr_0.95fr]"
       >
-        {/* Hình minh họa */}
         <aside
           aria-hidden="true"
-          className="h-[185px] min-w-0 overflow-hidden bg-[#ffe1ad] max-[360px]:h-[145px] md:h-full"
+          className="relative hidden min-w-0 overflow-hidden bg-slate-950 md:block"
         >
           <img
             src={anh}
             alt=""
-            className="block h-full w-full object-cover object-[center_32%] md:object-fill"
+            className="absolute inset-0 h-full w-full object-cover object-[center_32%] "
           />
         </aside>
 
-        {/* Form đăng nhập */}
-        <div className="relative flex min-w-0 flex-col justify-center bg-white px-[25px] pb-[30px] pt-7 max-[360px]:px-[17px] md:p-[clamp(28px,4.15vw,64px)]">
-          {/* <Link
-            to="/home"
-            className="absolute right-[18px] top-3 text-[11px] font-medium text-[#946675] transition hover:text-[#b51e31] hover:underline md:right-[22px] md:top-4 md:text-[clamp(11px,1vw,13px)]"
-          >
-            ← Trở về trang chủ
-          </Link> */}
-
-          <h1 className="mb-[22px] mt-2 text-center text-[23px] font-extrabold leading-[1.3] text-[#292929] md:mb-4 md:mt-[2px] md:text-[clamp(23px,2.3vw,32px)]">
-            Đăng nhập
-          </h1>
-
-          <form onSubmit={handleSignIn} className="w-full" aria-busy={loading}>
-            {/* Khung đỏ theo ảnh mẫu */}
-            <div className="-mx-[18px] flex flex-col gap-[10px] border-2 border-[#cf2436] px-[14px] pb-3 pt-4 md:px-[18px] md:pb-[10px] md:pt-[13px]">
-              <label htmlFor="signin-username" className="sr-only">
+        <div className="flex min-w-0 flex-col justify-center px-6 py-10 sm:px-10 md:px-12 lg:px-16">
+          <div className="mb-9 md:hidden">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
+              <FileSpreadsheet size={22} />
+            </span>
+            <p className="mt-3 text-sm font-bold text-slate-900">HRC2 QC</p>
+          </div>
+          <div className="mb-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Chào mừng trở lại</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Đăng nhập</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-500">Nhập thông tin tài khoản để tiếp tục vào hệ thống.</p>
+          </div>
+          <form onSubmit={handleSignIn} className="w-full space-y-5" aria-busy={loading}>
+            <div className="space-y-2">
+              <label htmlFor="signin-username" className="text-sm font-medium text-slate-700">
                 Tên đăng nhập
               </label>
-              <input
+              <Input
                 id="signin-username"
                 type="text"
                 autoComplete="username"
@@ -86,14 +88,17 @@ const SignInPage = () => {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Tên đăng nhập"
                 required
-                className="h-[43px] w-full rounded-full border border-[#c6a2a5] bg-white px-4 text-[13px] text-[#292929] outline-none transition placeholder:text-[#7d7070] focus:border-[#ae1d2c] focus:ring-[3px] focus:ring-[#b81f311a] md:h-[clamp(38px,3.5vw,49px)] md:text-[clamp(12px,1.1vw,14px)]"
+                className="h-12 rounded-xl border-slate-200 bg-slate-50/70 px-4 text-sm placeholder:text-slate-400"
               />
-
-              <div className="relative">
-                <label htmlFor="signin-password" className="sr-only">
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label htmlFor="signin-password" className="text-sm font-medium text-slate-700">
                   Mật khẩu
                 </label>
-                <input
+              </div>
+              <div className="relative">
+                <Input
                   id="signin-password"
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
@@ -101,46 +106,39 @@ const SignInPage = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Mật khẩu"
                   required
-                  className="h-[43px] w-full rounded-full border border-[#c6a2a5] bg-[#f8f8f8] pl-4 pr-11 text-[13px] text-[#292929] outline-none transition placeholder:text-[#7d7070] focus:border-[#ae1d2c] focus:ring-[3px] focus:ring-[#b81f311a] md:h-[clamp(38px,3.5vw,49px)] md:text-[clamp(12px,1.1vw,14px)]"
+                  className="h-12 rounded-xl border-slate-200 bg-slate-50/70 pl-4 pr-12 text-sm placeholder:text-slate-400"
                 />
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
                   aria-pressed={showPassword}
                   onClick={() => setShowPassword((current) => !current)}
-                  className="absolute right-[13px] top-1/2 flex h-[26px] w-[25px] -translate-y-1/2 items-center justify-center text-[#777] hover:text-[#ad1e2c]"
+                  className="absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 text-slate-400 hover:bg-transparent hover:text-slate-700"
                 >
-                  {showPassword ? <FaRegEyeSlash /> : <FaRegEye />}
-                </button>
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </Button>
               </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="flex cursor-pointer items-center gap-[9px] text-[12px] text-[#3e3e3e] md:text-[clamp(11px,1.05vw,13px)]">
-                  <input
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                  <Checkbox
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="m-0 h-[15px] w-[15px] cursor-pointer accent-[#ba2031]"
+                    className="m-0 cursor-pointer"
                   />
                   <span>Ghi nhớ đăng nhập</span>
-                </label>
-              </div>
+              </label>
             </div>
 
-            <button
+            <Button
               type="submit"
               disabled={loading || !username.trim() || !password}
-              className="mt-3 flex h-[45px] w-full items-center justify-center rounded-full border border-[#c21e32] bg-[#be1d30] text-sm font-bold text-white transition hover:bg-[#a91529] enabled:hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-70 md:h-[clamp(42px,4vw,50px)] md:text-[clamp(13px,1.14vw,16px)]"
+              className="h-12 w-full rounded-xl bg-blue-600 text-sm font-semibold shadow-md shadow-blue-600/15 hover:bg-blue-700"
             >
               {loading ? "Đang đăng nhập..." : "Đăng nhập"}
-            </button>
+            </Button>
           </form>
-          <p className="mt-4 text-center text-xs text-slate-600">
-            Chưa có tài khoản?{" "}
-            <Link to="/sign-up" className="font-bold text-[#a21e30] hover:underline">
-              Đăng ký
-            </Link>
-          </p>
         </div>
       </section>
     </main>

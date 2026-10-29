@@ -42,6 +42,7 @@ export const getQcExportConfig = () => ({
     loginPassword: getSelector("CSS_LOGIN_PASSWORD"),
     loginButton: getSelector("CSS_LOGIN_BUTTON"),
     openExport: getSelector("CSS_OPEN_EXPORT", 'button[onclick="openExportModal()"]'),
+    exportForm: getSelector("CSS_EXPORT_FORM", "#exportExcelModal"),
     factory: getSelector("CSS_FACTORY", "#expFactory"),
     fromDate: getSelector("CSS_FROM_DATE", "#expStartDate"),
     toDate: getSelector("CSS_TO_DATE", "#expEndDate"),

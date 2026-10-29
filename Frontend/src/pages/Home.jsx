@@ -1,6 +1,7 @@
 import React from "react";
 import Header from "../components/Header";
 import Hero from "../components/Hero";
+import { Button } from "../components/ui/button";
 
 const Home = () => {
   return (
@@ -111,14 +112,14 @@ const Home = () => {
                 thay thế.
               </p>
 
-              <button
+              <Button
                 onClick={() => {
                   window.location.href = "/image";
                 }}
                 className="mt-8 px-8 py-3 rounded-full bg-white text-purple-600 font-bold hover:scale-105 hover:shadow-2xl transition"
               >
                 Khám phá hình ảnh →
-              </button>
+              </Button>
             </div>
 
           </div>

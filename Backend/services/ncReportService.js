@@ -9,6 +9,46 @@ export const ORDER_DEMAND_REPORT_ID = "7adf6dc6c603752d3ddd162e";
 export const ORDER_DEMAND_REPORT_FILENAME = "Tong_Hop_Don_Hang_HRC2";
 export const ORDER_DEMAND_SHEET_NAME = "Nhu cầu đơn hàng HRC";
 
+export const ORDER_DEMAND_COLUMN_DEFINITIONS = [
+  { field: "nhu_cau", title: "Nhu cầu" },
+  { field: "thang", title: "Tháng" },
+  { field: "dot", title: "Đợt" },
+  { field: "khach_hang", title: "Khách hàng" },
+  { field: "thoi_gian_giao_hang", title: "Thời gian giao hàng" },
+  { field: "cw", title: "CW" },
+  { field: "po", title: "PO" },
+  { field: "xx", title: "xx" },
+  { field: "tdc_code", title: "TDC Code" },
+  { field: "tdc", title: "TDC" },
+  { field: "yeu_cau_dac_biet_skin_skin", title: "Yêu cầu đặc biệt Skin/Skin" },
+  { field: "ten_goi", title: "Tên gọi" },
+  { field: "ycdb", title: "YCĐB" },
+  { field: "txw", title: "TxW" },
+  { field: "mac_thep", title: "Mác thép" },
+  { field: "t", title: "T" },
+  { field: "w", title: "W" },
+  { field: "kl_1c", title: "KL_1C" },
+  { field: "kl_1d", title: "KL_1D" },
+  { field: "thua_thieu_so_voi_zbc04b", title: "Thừa thiếu so với ZBC04B" },
+  { field: "loai_1", title: "Loại 1" },
+  { field: "loai_2", title: "Loại 2" },
+  { field: "cho_xu_ly", title: "Chờ xử lý" },
+  { field: "cho_skin", title: "Chờ skin" },
+  { field: "tong_sl_sx_kcs", title: "Tổng SL sx KCS" },
+  { field: "ke_hoach_can", title: "Kế hoạch cán" },
+  { field: "tinh_trang", title: "Tình trạng" },
+  { field: "ton_phoi", title: "Tồn phôi" },
+  {
+    field: "phoi_tam_6_12m_ty_le_1a_hoac_loai_1ab_sau_skin_ty_le_1b_sau_skin",
+    title: "Phôi tấm 6-12m · Tỷ lệ 1A hoặc loại 1AB sau skin · Tỷ lệ 1B sau skin",
+  },
+  { field: "quy_cach_phoi_tam", title: "Quy cách phôi tấm" },
+  { field: "ket_qua_can", title: "Kết quả cán" },
+  { field: "ma_khach_hang", title: "Mã khách hàng" },
+  { field: "day_muc_tieu", title: "Dày mục tiêu" },
+];
+export const ORDER_DEMAND_COLUMNS = ORDER_DEMAND_COLUMN_DEFINITIONS.map(({ field }) => field);
+
 const MAX_ROWS_PER_PAGE = 200;
 const MAX_REPORTS_PER_PAGE = 100;
 const MAX_SHEET_FILTERS = 50;
@@ -17,6 +57,13 @@ const MAX_CELL_LENGTH = 20000;
 const GRIDFS_BUCKET_NAME = "ncworkbooks";
 const GRIDFS_THRESHOLD = 12 * 1024 * 1024;
 const MIGRATION_COLLECTION = "orderDemandMigrations";
+const ORDER_DEMAND_COLUMNS_VERSION = 2;
+const columnDefinitionByTitle = new Map(
+  ORDER_DEMAND_COLUMN_DEFINITIONS.map((definition) => [definition.title, definition])
+);
+const columnDefinitionByField = new Map(
+  ORDER_DEMAND_COLUMN_DEFINITIONS.map((definition) => [definition.field, definition])
+);
 
 const getNcModel = () => initializeNcModel();
 const getNcReportModel = () => initializeNcReportModel();
@@ -29,13 +76,37 @@ const reportResponse = (report) => ({
   saved_at: report.savedAt,
   rows_imported: report.rowsImported,
   bytes: report.bytes,
-  sheets: report.sheets,
+  sheets: report.sheets?.map((sheet) => ({
+    ...sheet,
+    columns: sheet.columns.map(getFieldForColumn),
+  })),
   report_type: "order-demand",
 });
 
 const makeError = (message, status) => Object.assign(new Error(message), { status });
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const toSnakeCase = (value) => value
+  .toLowerCase()
+  .replace(/đ/g, "d")
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-z0-9]+/g, "_")
+  .replace(/^_+|_+$/g, "") || "column";
+const getFieldForColumn = (column) =>
+  columnDefinitionByTitle.get(column)?.field ||
+  (columnDefinitionByField.has(column) ? column : toSnakeCase(column));
+const normalizeOrderDemandValues = (values) => {
+  const normalized = {};
+  for (const [column, value] of Object.entries(values || {})) {
+    const field = getFieldForColumn(column);
+    if (Object.prototype.hasOwnProperty.call(normalized, field) && normalized[field] !== value) {
+      throw makeError(`Không thể chuyển đổi dữ liệu do trùng field "${field}".`, 500);
+    }
+    normalized[field] = value;
+  }
+  return normalized;
+};
 
 const cellContainsExpression = (column, value) => ({
   $expr: {
@@ -143,7 +214,8 @@ const getReportAndSheet = async (reportId, sheetName) => {
   if (!sheet || sheetName !== ORDER_DEMAND_SHEET_NAME) {
     throw makeError("Báo cáo không có sheet nhu cầu đơn hàng này.", 404);
   }
-  return { report, sheet };
+  await migrateLegacyOrderDemandRows(reportId);
+  return { report, sheet: await ensureOrderDemandColumns(report) };
 };
 
 export const migrateLegacyOrderDemandRows = async (reportId) => {
@@ -198,6 +270,69 @@ export const migrateLegacyOrderDemandRows = async (reportId) => {
     { $setOnInsert: { migratedAt: new Date() } },
     { upsert: true }
   );
+};
+
+const ensureOrderDemandColumns = async (report) => {
+  const sheet = report.sheets.find((item) => item.name === ORDER_DEMAND_SHEET_NAME);
+  if (!sheet) return undefined;
+
+  const columns = [...new Set([
+    ...ORDER_DEMAND_COLUMNS,
+    ...sheet.columns
+      .map(getFieldForColumn)
+      .filter((column) => !ORDER_DEMAND_COLUMNS.includes(column)),
+  ])];
+  const columnsChanged = columns.length !== sheet.columns.length ||
+    columns.some((column, index) => column !== sheet.columns[index]);
+  const NcRow = getNcModel();
+  const migrationCollection = NcRow.db.collection(MIGRATION_COLLECTION);
+  const migration = await migrationCollection.findOne(
+    { _id: report._id },
+    { projection: { columnsVersion: 1 } }
+  );
+
+  if (migration?.columnsVersion !== ORDER_DEMAND_COLUMNS_VERSION) {
+    const cursor = NcRow.find({
+      reportId: report._id,
+      sheetName: ORDER_DEMAND_SHEET_NAME,
+    })
+      .select("values")
+      .lean()
+      .cursor();
+    let operations = [];
+    for await (const row of cursor) {
+      const values = {
+        ...Object.fromEntries(ORDER_DEMAND_COLUMNS.map((column) => [column, ""])),
+        ...normalizeOrderDemandValues(row.values),
+      };
+      operations.push({
+        updateOne: {
+          filter: { _id: row._id },
+          update: { $set: { values } },
+        },
+      });
+      if (operations.length >= 500) {
+        await NcRow.bulkWrite(operations, { ordered: true });
+        operations = [];
+      }
+    }
+    if (operations.length) await NcRow.bulkWrite(operations, { ordered: true });
+
+    if (columnsChanged) {
+      sheet.columns = columns;
+      await report.save();
+    }
+    await migrationCollection.updateOne(
+      { _id: report._id },
+      { $set: { columnsVersion: ORDER_DEMAND_COLUMNS_VERSION } },
+      { upsert: true }
+    );
+  } else if (columnsChanged) {
+    sheet.columns = columns;
+    await report.save();
+  }
+
+  return sheet;
 };
 
 export const listOrderDemandReports = async ({ limit = 100, offset = 0, search = "" } = {}) => {
@@ -272,11 +407,31 @@ export const importOrderDemandReport = async ({
     );
   }
 
+  const sourceColumns = Object.keys(rows[0].values);
+  const sourceFields = new Set(sourceColumns.map(getFieldForColumn));
+  const columns = [...new Set([
+    ...ORDER_DEMAND_COLUMNS,
+    ...sourceFields,
+  ])];
+  const generatedColumns = ORDER_DEMAND_COLUMN_DEFINITIONS
+    .filter(({ field }) => !sourceFields.has(field))
+    .map(({ title }) => title);
+  if (generatedColumns.length) {
+    XLSX.utils.sheet_add_aoa(worksheet, [generatedColumns], {
+      origin: { r: 0, c: sourceColumns.length },
+    });
+  }
+  const importedRows = rows.map((row) => ({
+    ...row,
+    values: {
+      ...Object.fromEntries(columns.map((column) => [column, ""])),
+      ...normalizeOrderDemandValues(row.values),
+    },
+  }));
   const orderWorkbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(orderWorkbook, worksheet, ORDER_DEMAND_SHEET_NAME);
   const reportBuffer = XLSX.write(orderWorkbook, { bookType: "xlsx", type: "buffer" });
   const filename = `${ORDER_DEMAND_REPORT_FILENAME}.xlsx`;
-  const columns = Object.keys(rows[0].values);
   const sheets = [{ name: ORDER_DEMAND_SHEET_NAME, rowCount: rows.length, columns }];
   const reportId = new mongoose.Types.ObjectId(ORDER_DEMAND_REPORT_ID);
   const NcRow = getNcModel();
@@ -317,8 +472,8 @@ export const importOrderDemandReport = async ({
       );
 
       await NcRow.deleteMany({ reportId }).session(session);
-      for (let start = 0; start < rows.length; start += batchSize) {
-        const batch = rows.slice(start, start + batchSize).map((row) => ({
+      for (let start = 0; start < importedRows.length; start += batchSize) {
+        const batch = importedRows.slice(start, start + batchSize).map((row) => ({
           ...row,
           reportId,
           sheetName: ORDER_DEMAND_SHEET_NAME,

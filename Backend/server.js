@@ -10,6 +10,7 @@ import { connectDB } from "./config/db.js";
 import { ensureUserIndexes } from "./models/userModel.js";
 import { initializeNcModel } from "./models/ncModel.js";
 import { initializeNcReportModel } from "./models/ncReportModel.js";
+import { initializeQcAutoExport } from "./services/qcAutoExportService.js";
 
 // Import routers
 import userRouter from "./routes/userRouter.js";
@@ -90,11 +91,12 @@ app.get("/", (req, res) => {
 
 // ===================== START SERVER =====================
 const startServer = async () => {
-  await connectDB();
-  await ensureUserIndexes();
-  if (mongoose.connection.readyState === 1) {
+  const isDatabaseConnected = await connectDB();
+  if (isDatabaseConnected) {
+    await ensureUserIndexes();
     await initializeNcModel().createIndexes();
     await initializeNcReportModel().createIndexes();
+    await initializeQcAutoExport();
   }
   const server = app.listen(port, host, () => {
     console.log(`Server started on http://${host}:${port}`);

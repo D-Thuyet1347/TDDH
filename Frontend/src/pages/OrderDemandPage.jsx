@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -14,7 +14,6 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  X,
 } from 'lucide-react';
 import {
   createOrderDemandRow,
@@ -25,50 +24,77 @@ import {
   updateOrderDemandRow,
 } from '../AllAPIs';
 import QcLayout from '../components/QcLayout';
+import { Alert } from '../components/ui/alert';
+import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
+import { Select } from '../components/ui/select';
+import { Table } from '../components/ui/table';
 
 const SHEET_NAME = 'Nhu cầu đơn hàng HRC';
 const PAGE_SIZE = 50;
 const LOAD_MORE_THRESHOLD = 240;
 
 const columnDefinitions = [
-  { title: 'Nhu cầu', width: 'min-w-28', color: 'bg-[#dce6f8]' },
-  { title: 'Tháng', width: 'min-w-20', color: 'bg-[#b8d5fa]' },
-  { title: 'Đợt', width: 'min-w-20', color: 'bg-[#dce6f8]' },
-  { title: 'Khách hàng', width: 'min-w-44', color: 'bg-[#dce6f8]' },
-  { title: 'Thời gian giao hàng', width: 'min-w-36', color: 'bg-[#dce6f8]' },
-  { title: 'CW', width: 'min-w-16', color: 'bg-[#dce6f8]' },
-  { title: 'PO', width: 'min-w-28', color: 'bg-[#dce6f8]' },
-  { title: 'xx', width: 'min-w-16', color: 'bg-[#dce6f8]' },
-  { title: 'TDC Code', width: 'min-w-44', color: 'bg-[#f5b5bd] text-red-700' },
-  { title: 'TDC', width: 'min-w-56', color: 'bg-[#dce6f8]' },
-  { title: 'Yêu cầu đặc biệt Skin/Skin', width: 'min-w-64', color: 'bg-[#dce6f8]' },
-  { title: 'Tên gọi', width: 'min-w-48', color: 'bg-[#dce6f8]' },
-  { title: 'YCĐB', width: 'min-w-24', color: 'bg-[#dce6f8]' },
-  { title: 'TxW', width: 'min-w-24', color: 'bg-[#dce6f8]' },
-  { title: 'Mác thép', width: 'min-w-28', color: 'bg-[#dce6f8]' },
-  { title: 'T', width: 'min-w-16', color: 'bg-[#dce6f8]' },
-  { title: 'W', width: 'min-w-16', color: 'bg-[#dce6f8]' },
-  { title: 'KL_1C', width: 'min-w-20', color: 'bg-[#dce6f8]' },
-  { title: 'KL_1D', width: 'min-w-20', color: 'bg-[#dce6f8]' },
-  { title: 'Thừa thiếu so với ZBC04B', width: 'min-w-28', color: 'bg-rose-100 text-rose-800' },
-  { title: 'Loại 1', width: 'min-w-20', color: 'bg-lime-200 text-lime-950' },
-  { title: 'Loại 2', width: 'min-w-20', color: 'bg-amber-200 text-amber-950' },
-  { title: 'Chờ xử lý', width: 'min-w-20', color: 'bg-yellow-100 text-yellow-900' },
-  { title: 'Chờ skin', width: 'min-w-20', color: 'bg-yellow-100 text-yellow-900' },
-  { title: 'Tổng SL sx KCS', width: 'min-w-24', color: 'bg-emerald-100 text-emerald-900' },
-  { title: 'Kế hoạch cán', width: 'min-w-24', color: 'bg-emerald-100 text-emerald-900' },
-  { title: 'Tình trạng', width: 'min-w-28', color: 'bg-yellow-100 text-yellow-900' },
-  { title: 'Tồn phôi', width: 'min-w-24', color: 'bg-emerald-100 text-emerald-900' },
+  { key: 'nhu_cau', title: 'Nhu cầu', width: 'min-w-28', color: 'bg-[#dce6f8]' },
+  { key: 'thang', title: 'Tháng', width: 'min-w-20', color: 'bg-[#b8d5fa]' },
+  { key: 'dot', title: 'Đợt', width: 'min-w-20', color: 'bg-[#dce6f8]' },
+  { key: 'khach_hang', title: 'Khách hàng', width: 'min-w-44', color: 'bg-[#dce6f8]' },
+  { key: 'thoi_gian_giao_hang', title: 'Thời gian giao hàng', width: 'min-w-36', color: 'bg-[#dce6f8]' },
+  { key: 'cw', title: 'CW', width: 'min-w-16', color: 'bg-[#dce6f8]' },
+  { key: 'po', title: 'PO', width: 'min-w-28', color: 'bg-[#dce6f8]' },
+  { key: 'xx', title: 'xx', width: 'min-w-16', color: 'bg-[#dce6f8]' },
+  { key: 'tdc_code', title: 'TDC Code', width: 'min-w-44', color: 'bg-[#f5b5bd] text-red-700' },
+  { key: 'tdc', title: 'TDC', width: 'min-w-56', color: 'bg-[#dce6f8]' },
+  { key: 'yeu_cau_dac_biet_skin_skin', title: 'Yêu cầu đặc biệt Skin/Skin', width: 'min-w-64', color: 'bg-[#dce6f8]' },
+  { key: 'ten_goi', title: 'Tên gọi', width: 'min-w-48', color: 'bg-[#dce6f8]' },
+  { key: 'ycdb', title: 'YCĐB', width: 'min-w-24', color: 'bg-[#dce6f8]' },
+  { key: 'txw', title: 'TxW', width: 'min-w-24', color: 'bg-[#dce6f8]' },
+  { key: 'mac_thep', title: 'Mác thép', width: 'min-w-28', color: 'bg-[#dce6f8]' },
+  { key: 't', title: 'T', width: 'min-w-16', color: 'bg-[#dce6f8]' },
+  { key: 'w', title: 'W', width: 'min-w-16', color: 'bg-[#dce6f8]' },
+  { key: 'kl_1c', title: 'KL_1C', width: 'min-w-20', color: 'bg-[#dce6f8]' },
+  { key: 'kl_1d', title: 'KL_1D', width: 'min-w-20', color: 'bg-[#dce6f8]' },
+  { key: 'thua_thieu_so_voi_zbc04b', title: 'Thừa thiếu so với ZBC04B', width: 'min-w-28', color: 'bg-rose-100 text-rose-800' },
+  { key: 'loai_1', title: 'Loại 1', width: 'min-w-20', color: 'bg-lime-200 text-lime-950' },
+  { key: 'loai_2', title: 'Loại 2', width: 'min-w-20', color: 'bg-amber-200 text-amber-950' },
+  { key: 'cho_xu_ly', title: 'Chờ xử lý', width: 'min-w-20', color: 'bg-yellow-100 text-yellow-900' },
+  { key: 'cho_skin', title: 'Chờ skin', width: 'min-w-20', color: 'bg-yellow-100 text-yellow-900' },
+  { key: 'tong_sl_sx_kcs', title: 'Tổng SL sx KCS', width: 'min-w-24', color: 'bg-emerald-100 text-emerald-900' },
+  { key: 'ke_hoach_can', title: 'Kế hoạch cán', width: 'min-w-24', color: 'bg-emerald-100 text-emerald-900' },
+  { key: 'tinh_trang', title: 'Tình trạng', width: 'min-w-28', color: 'bg-yellow-100 text-yellow-900' },
+  { key: 'ton_phoi', title: 'Tồn phôi', width: 'min-w-24', color: 'bg-emerald-100 text-emerald-900' },
   {
+    key: 'phoi_tam_6_12m_ty_le_1a_hoac_loai_1ab_sau_skin_ty_le_1b_sau_skin',
     title: 'Phôi tấm 6-12m · Tỷ lệ 1A hoặc loại 1AB sau skin · Tỷ lệ 1B sau skin',
     width: 'min-w-72',
     color: 'bg-[#dce6f8]',
   },
-  { title: 'Quy cách phôi tấm', width: 'min-w-72', color: 'bg-[#dce6f8]' },
-  { title: 'Kết quả cán', width: 'min-w-36', color: 'bg-emerald-100 text-emerald-900' },
-  { title: 'Mã khách hàng', width: 'min-w-44', color: 'bg-blue-700 text-white' },
-  { title: 'Dày mục tiêu', width: 'min-w-24', color: 'bg-[#dce6f8]' },
+  { key: 'quy_cach_phoi_tam', title: 'Quy cách phôi tấm', width: 'min-w-72', color: 'bg-[#dce6f8]' },
+  { key: 'ket_qua_can', title: 'Kết quả cán', width: 'min-w-36', color: 'bg-emerald-100 text-emerald-900' },
+  { key: 'ma_khach_hang', title: 'Mã khách hàng', width: 'min-w-44', color: 'bg-blue-700 text-white' },
+  { key: 'day_muc_tieu', title: 'Dày mục tiêu', width: 'min-w-24', color: 'bg-[#dce6f8]' },
 ];
+const columnDefinitionByKey = new Map(
+  columnDefinitions.map((column) => [column.key, column])
+);
+const columnKeyByTitle = new Map(
+  columnDefinitions.map(({ key, title }) => [title, key])
+);
+
+const normalizeColumnKey = (key) => columnKeyByTitle.get(key) || key;
+const normalizeRowValues = (values = {}) => {
+  const normalized = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (!columnKeyByTitle.has(key)) normalized[key] = value;
+  }
+  for (const [key, value] of Object.entries(values)) {
+    const field = normalizeColumnKey(key);
+    if (!(field in normalized)) normalized[field] = value;
+  }
+  return normalized;
+};
 
 const formatCell = (value) => {
   if (value === null || value === undefined || value === '') return '—';
@@ -77,11 +103,14 @@ const formatCell = (value) => {
 
 const isExtraColumn = (column) =>
   /^_*EMPTY(?:_\d+)?$/i.test(column.trim()) ||
+  /^(?:cot|column)_\d+$/i.test(column.trim()) ||
   /^Cột\s*\d+$/i.test(column.trim()) ||
   /^Column\s*\d+$/i.test(column.trim());
 
-const createEmptyValues = (columns, values = {}) =>
-  Object.fromEntries(columns.map((column) => [column, String(values[column] ?? '')]));
+const createEmptyValues = (columns, values = {}) => {
+  const normalized = normalizeRowValues(values);
+  return Object.fromEntries(columns.map((column) => [column, String(normalized[column] ?? '')]));
+};
 
 export default function OrderDemandPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -133,14 +162,14 @@ export default function OrderDemandPage() {
   const sheetColumns = useMemo(
     () => selectedReport?.sheets?.find(
       (sheet) => sheet.name === SHEET_NAME
-    )?.columns || [],
+    )?.columns.map(normalizeColumnKey) || [],
     [selectedReport]
   );
   const columns = useMemo(
-    () => sheetColumns
-      .map((key, index) => ({
+    () => [...new Set([...columnDefinitions.map(({ key }) => key), ...sheetColumns])]
+      .map((key) => ({
         key,
-        ...(columnDefinitions[index] || {
+        ...(columnDefinitionByKey.get(key) || {
           title: key,
           width: 'min-w-24',
           color: 'bg-[#dce6f8]',
@@ -177,7 +206,10 @@ export default function OrderDemandPage() {
     })
       .then((result) => {
         if (queryVersionRef.current !== queryVersion) return;
-        setRows(result.rows);
+        setRows(result.rows.map((row) => ({
+          ...row,
+          values: normalizeRowValues(row.values),
+        })));
         setTotal(result.total);
       })
       .catch((loadError) => {
@@ -191,7 +223,7 @@ export default function OrderDemandPage() {
     return () => controller.abort();
   }, [reportId, search, filters, reloadKey]);
 
-  const loadMoreRows = async () => {
+  const loadMoreRows = useCallback(async () => {
     if (
       !reportId ||
       loadingRows ||
@@ -213,7 +245,13 @@ export default function OrderDemandPage() {
         offset: nextOffset,
       });
       if (queryVersionRef.current === queryVersion) {
-        setRows((currentRows) => [...currentRows, ...result.rows]);
+        setRows((currentRows) => [
+          ...currentRows,
+          ...result.rows.map((row) => ({
+            ...row,
+            values: normalizeRowValues(row.values),
+          })),
+        ]);
         setTotal(result.total);
       }
     } catch (loadError) {
@@ -224,7 +262,7 @@ export default function OrderDemandPage() {
         setLoadingMore(false);
       }
     }
-  };
+  }, [reportId, loadingRows, rows.length, total, search, filters]);
 
   const handleTableScroll = (event) => {
     const element = event.currentTarget;
@@ -232,6 +270,21 @@ export default function OrderDemandPage() {
       void loadMoreRows();
     }
   };
+
+  useEffect(() => {
+    const element = tableScrollRef.current;
+    if (
+      !element ||
+      loadingRows ||
+      loadingMore ||
+      rows.length === 0 ||
+      rows.length >= total
+    ) return;
+
+    if (element.scrollHeight - element.clientHeight <= LOAD_MORE_THRESHOLD) {
+      void loadMoreRows();
+    }
+  }, [loadMoreRows, loadingRows, loadingMore, rows.length, total]);
 
   const selectReport = (event) => {
     const nextReportId = event.target.value;
@@ -364,10 +417,10 @@ export default function OrderDemandPage() {
           >
             <ArrowLeft size={14} /> Tất cả dữ liệu
           </Link>
-          <p className="mt-3 text-[11px] font-extrabold uppercase tracking-[0.16em] text-[#526bb9]">
+          <p className="mt-3 text-xs font-semibold text-blue-700">
             Theo dõi đơn hàng
           </p>
-          <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-[#1e2944]">
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">
             Nhu cầu đơn hàng HRC
           </h1>
           <p className="mt-2 text-sm text-slate-500">
@@ -376,17 +429,17 @@ export default function OrderDemandPage() {
         </header>
 
         {error && (
-          <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <Alert variant="destructive" className="flex items-start gap-2 rounded-xl px-4 py-3 text-sm">
             <AlertCircle size={17} className="mt-0.5 shrink-0" /> {error}
-          </div>
+          </Alert>
         )}
         {notice && !error && (
-          <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <Alert role="status" variant="success" className="rounded-xl px-4 py-3 text-sm">
             {notice}
-          </div>
+          </Alert>
         )}
 
-        <section className="overflow-hidden w-full rounded-2xl border border-[#d9e0ef] bg-white shadow-sm">
+        <Card className="w-full overflow-hidden rounded-2xl border-slate-200/80">
           <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
             <ClipboardList size={17} className="text-[#526bb9]" />
             <h2 className="text-sm font-extrabold text-slate-800">
@@ -395,7 +448,7 @@ export default function OrderDemandPage() {
             <span className="text-xs text-slate-400">{columns.length} cột</span>
             <label className="ml-auto min-w-48 flex-1 sm:max-w-64">
               <span className="sr-only">Báo cáo</span>
-              <select
+              <Select
                 value={reportId}
                 onChange={selectReport}
                 disabled={loadingReports || reports.length === 0}
@@ -409,22 +462,19 @@ export default function OrderDemandPage() {
                     {report.filename}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             {selectedReport && (
-              <a
-                href={getOrderDemandReportFileUrl(reportId)}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
-              >
-                <Download size={15} /> Tải Excel
-              </a>
+              <Button asChild variant="outline" size="sm">
+                <a href={getOrderDemandReportFileUrl(reportId)}><Download size={15} /> Tải Excel</a>
+              </Button>
             )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
             <label className="relative min-w-56 flex-1 sm:max-w-md">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
+              <Input
                 type="search"
                 value={search}
                 onChange={(event) => {
@@ -434,34 +484,39 @@ export default function OrderDemandPage() {
                 className="h-9 w-full rounded-lg border border-slate-200 pl-9 pr-3 text-sm outline-none focus:border-[#7992dc]"
               />
             </label>
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={syncRows}
               disabled={!reportId || loadingRows}
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RefreshCw size={15} className={loadingRows ? 'animate-spin' : ''} />
               Đồng bộ dữ liệu
-            </button>
+            </Button>
             {activeFilterCount > 0 && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                     setFilters({});
                   }}
                 className="h-9 rounded-lg px-3 text-sm font-bold text-[#405bb0] hover:bg-blue-50"
               >
                 Xóa {activeFilterCount} bộ lọc
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               type="button"
+              size="sm"
               onClick={() => openDialog()}
               disabled={!selectedReport || loadingReports}
               className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#405bb0] px-3 text-sm font-bold text-white hover:bg-[#334a98] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus size={16} /> Thêm dòng
-            </button>
+            </Button>
           </div>
 
           <div
@@ -469,7 +524,7 @@ export default function OrderDemandPage() {
             onScroll={handleTableScroll}
             className="max-h-[75vh] overflow-auto"
           >
-            <table className="w-full min-w-max border-separate border-spacing-0 text-left">
+            <Table wrapperClassName="contents" className="w-full min-w-max border-separate border-spacing-0 text-left">
               <thead className="sticky top-0 z-10">
                 <tr>
                   {columns.map((column) => (
@@ -480,8 +535,10 @@ export default function OrderDemandPage() {
                     >
                       <div className="flex items-center justify-center gap-1">
                         <span className="whitespace-normal">{column.title}</span>
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon"
                           aria-label={`Mở bộ lọc cột ${column.title}`}
                           aria-expanded={activeFilterColumn === column.key}
                           title={filters[column.key] ? `Đang lọc: ${filters[column.key]}` : `Lọc ${column.title}`}
@@ -491,7 +548,7 @@ export default function OrderDemandPage() {
                           }`}
                         >
                           <Filter size={13} />
-                        </button>
+                        </Button>
                       </div>
                       {activeFilterColumn === column.key && (
                         <form
@@ -504,7 +561,7 @@ export default function OrderDemandPage() {
                         >
                           <label className="block text-xs font-bold text-slate-700">
                             Lọc cột: {column.title}
-                            <input
+                            <Input
                               autoFocus
                               type="search"
                               aria-label={`Giá trị lọc cho cột ${column.title}`}
@@ -518,19 +575,21 @@ export default function OrderDemandPage() {
                             />
                           </label>
                           <div className="mt-3 flex items-center justify-between gap-2">
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               type="button"
                               onClick={() => clearColumnFilter(column.key)}
                               className="rounded-md px-2 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100"
                             >
                               Xóa lọc
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="submit"
                               className="rounded-md bg-[#405bb0] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#334a98]"
                             >
                               Áp dụng
-                            </button>
+                            </Button>
                           </div>
                         </form>
                       )}
@@ -564,7 +623,7 @@ export default function OrderDemandPage() {
                     ))}
                     <td className="sticky right-0 border-b border-slate-200 bg-white px-2">
                       <div className="flex items-center justify-center gap-1">
-                        <button
+                        <Button
                           type="button"
                           aria-label="Sao chép để sửa và thêm đơn hàng mới"
                           title="Sao chép nội dung để sửa rồi thêm thành dòng mới"
@@ -573,9 +632,11 @@ export default function OrderDemandPage() {
                           className="rounded-md p-2 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                         >
                           <Copy size={15} />
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon"
                           aria-label="Sửa dòng"
                           title="Sửa dòng"
                           onClick={() => openDialog(row)}
@@ -583,9 +644,11 @@ export default function OrderDemandPage() {
                           className="rounded-md p-2 text-[#405bb0] hover:bg-blue-50 disabled:opacity-50"
                         >
                           <Pencil size={15} />
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon"
                           aria-label="Xóa dòng"
                           title="Xóa dòng"
                           onClick={() => removeRow(row)}
@@ -595,7 +658,7 @@ export default function OrderDemandPage() {
                           {deletingRowId === row._id
                             ? <LoaderCircle size={15} className="animate-spin" />
                             : <Trash2 size={15} />}
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -607,7 +670,7 @@ export default function OrderDemandPage() {
                   </tr>
                 )}
               </tbody>
-            </table>
+            </Table>
             {loadingMore && (
               <div className="flex items-center justify-center gap-2 border-t border-slate-100 py-3 text-xs text-slate-500">
                 <LoaderCircle size={15} className="animate-spin" /> Đang tải thêm dòng…
@@ -620,35 +683,26 @@ export default function OrderDemandPage() {
               Đang hiển thị {rows.length.toLocaleString('vi-VN')} / {total.toLocaleString('vi-VN')} dòng
             </span>
           </div>
-        </section>
+        </Card>
       </div>
 
-      {dialog && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeDialog();
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="order-demand-dialog-title"
-            className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
-          >
-            <header className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <h2 id="order-demand-dialog-title" className="text-lg font-extrabold text-slate-800">
+      <Dialog
+        open={Boolean(dialog)}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+      >
+        {dialog && (
+          <DialogContent closeDisabled={saving} className="flex max-h-[90vh] w-full max-w-4xl flex-col gap-0 overflow-hidden rounded-2xl p-0">
+            <DialogHeader className="flex-row items-center justify-between border-b border-slate-200 px-5 py-4">
+              <DialogTitle className="font-extrabold text-slate-800">
                 {dialog?.mode === 'edit'
                   ? 'Sửa dòng nhu cầu'
                   : dialog?.mode === 'copy'
                     ? 'Sửa nội dung sao chép và thêm dòng mới'
                     : 'Thêm dòng nhu cầu'}
-              </h2>
-              <button type="button" onClick={closeDialog} disabled={saving} aria-label="Đóng" className="rounded-md p-1 text-slate-500 hover:bg-slate-100">
-                <X size={20} />
-              </button>
-            </header>
+              </DialogTitle>
+            </DialogHeader>
             <form onSubmit={saveRow} className="flex min-h-0 flex-1 flex-col">
               <div className="grid gap-3 overflow-y-auto p-5 sm:grid-cols-2 lg:grid-cols-3">
                 {columns.map((column) => (
@@ -656,7 +710,7 @@ export default function OrderDemandPage() {
                     <span className="mb-1 block truncate text-xs font-bold text-slate-600" title={column.title}>
                       {column.title}
                     </span>
-                    <input
+                    <Input
                       type="text"
                       maxLength={20000}
                       value={formValues[column.key] ?? ''}
@@ -670,18 +724,18 @@ export default function OrderDemandPage() {
                 ))}
               </div>
               <footer className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
-                <button type="button" onClick={closeDialog} disabled={saving} className="h-9 rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                <Button type="button" variant="outline" size="sm" onClick={closeDialog} disabled={saving}>
                   Hủy
-                </button>
-                <button type="submit" disabled={saving} className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#405bb0] px-4 text-sm font-bold text-white hover:bg-[#334a98] disabled:opacity-50">
+                </Button>
+                <Button type="submit" size="sm" disabled={saving}>
                   {saving ? <LoaderCircle size={16} className="animate-spin" /> : <Check size={16} />}
                   {dialog?.mode === 'edit' ? 'Lưu thay đổi' : 'Thêm dòng mới'}
-                </button>
+                </Button>
               </footer>
             </form>
-          </section>
-        </div>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
     </QcLayout>
   );
 }

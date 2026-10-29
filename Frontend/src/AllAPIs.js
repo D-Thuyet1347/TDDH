@@ -62,6 +62,15 @@ export const getQcExportAvailability = (signal) =>
 export const startQcExport = (filters, signal) =>
   request(axios.post(`${QC_API_URL}/exports`, filters, { signal }));
 
+export const getQcAutoExportStatus = (signal) =>
+  request(axios.get(`${QC_API_URL}/exports/auto`, { signal }));
+
+export const enableQcAutoExport = (filters, signal) =>
+  request(axios.put(`${QC_API_URL}/exports/auto`, filters, { signal }));
+
+export const disableQcAutoExport = (signal) =>
+  request(axios.delete(`${QC_API_URL}/exports/auto`, { signal }));
+
 export const getQcExportJob = (jobId, signal) =>
   request(axios.get(`${QC_API_URL}/exports/jobs/${encodeURIComponent(jobId)}`, { signal }));
 
@@ -70,6 +79,12 @@ export const getReportRows = ({ reportId, sheet, limit = 50, offset = 0, signal 
     params: { sheet, limit, offset },
     signal,
   }));
+
+export const getReportQualitySummary = ({ reportId, signal }) =>
+  request(axios.get(
+    `${QC_API_URL}/reports/${encodeURIComponent(reportId)}/quality-summary`,
+    { signal }
+  ));
 
 export const getOrderDemandRows = ({
   reportId,
