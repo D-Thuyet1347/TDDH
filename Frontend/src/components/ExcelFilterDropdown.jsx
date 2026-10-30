@@ -24,6 +24,44 @@ import { Input } from './ui/input';
  * - Record counts per unique value
  * - Apply / Cancel actions
  */
+const NUMBER_COLUMNS = new Set([
+  'kl_1c',
+  'kl_1d',
+  'thua_thieu_so_voi_zbc04b',
+  'loai_1',
+  'loai_2',
+  'cho_xu_ly',
+  'cho_skin',
+  'tong_sl_sx_kcs',
+  'ke_hoach_can',
+  'ton_phoi',
+  'ket_qua_can',
+]);
+
+const formatFilterLabel = (val, colKey) => {
+  if (!val && val !== 0) return '(Trống)';
+  const key = String(colKey || '').toLowerCase();
+  if (
+    NUMBER_COLUMNS.has(key) ||
+    key.startsWith('kl_') ||
+    key.includes('loai_') ||
+    key.includes('cho_') ||
+    key.includes('kcs') ||
+    key.includes('thua_thieu') ||
+    key.includes('ton_phoi') ||
+    key.includes('ke_hoach')
+  ) {
+    const cleanStr = String(val).trim().replace(/\s+/g, '').replace(/,/g, '');
+    if (/^-?\d+(\.\d+)?$/.test(cleanStr)) {
+      const num = parseFloat(cleanStr);
+      if (Number.isFinite(num)) {
+        return num.toLocaleString('en-US', { maximumFractionDigits: 3 });
+      }
+    }
+  }
+  return String(val);
+};
+
 export default function ExcelFilterDropdown({
   columnKey,
   title,
@@ -61,7 +99,7 @@ export default function ExcelFilterDropdown({
         list.push({ key: '__BLANK__', label: '(Trống)', count: blankCount });
       }
       for (const [val, count] of sorted) {
-        list.push({ key: val, label: val, count });
+        list.push({ key: val, label: formatFilterLabel(val, columnKey), count });
       }
       return list;
     }
@@ -93,7 +131,7 @@ export default function ExcelFilterDropdown({
       list.push({ key: '__BLANK__', label: '(Trống)', count: blankCount });
     }
     for (const [val, count] of sorted) {
-      list.push({ key: val, label: val, count });
+      list.push({ key: val, label: formatFilterLabel(val, columnKey), count });
     }
     return list;
   }, [allColumnValues, rows, columnKey]);

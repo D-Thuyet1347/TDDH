@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
+  BarChart3,
   ClipboardList,
   FileSpreadsheet,
   Files,
@@ -14,6 +15,7 @@ const navigation = [
   { to: '/export', label: 'Xuất Excel', icon: Upload },
   { to: '/reports', label: 'Kho báo cáo', icon: Files },
   { to: '/orders', label: 'Nhu cầu HRC', icon: ClipboardList },
+  { to: '/order-charts', label: 'Biểu đồ Nhu cầu', icon: BarChart3 },
   { to: '/data', label: 'Dữ liệu', icon: TableProperties },
 ];
 

@@ -10,6 +10,7 @@ import ExportPage from './pages/ExportPage';
 import ReportsPage from './pages/ReportsPage';
 import DataPage from './pages/DataPage';
 import OrderDemandPage from './pages/OrderDemandPage';
+import OrderChartsPage from './pages/OrderChartsPage';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <Route path="/export" element={<ExportPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/orders" element={<OrderDemandPage />} />
+          <Route path="/order-charts" element={<OrderChartsPage />} />
           <Route path="/data" element={<DataPage />} />
           <Route path="/sheets/:sheetName" element={<DataPage />} />
           <Route path="/sign-up" element={<SignUpPage />} />

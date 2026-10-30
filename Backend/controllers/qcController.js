@@ -17,7 +17,7 @@ import {
 } from "../services/qcExportService.js";
 
 const MAX_REPORTS_PER_PAGE = 100;
-const MAX_ROWS_PER_PAGE = 30000;
+const MAX_ROWS_PER_PAGE = 100000;
 const MAX_IMPORTED_ROWS = 100000;
 const QC_COLUMN_GROUPS = [
   "THÔNG TIN CHUNG",
@@ -267,33 +267,77 @@ export const getQcColumnValues = async (req, res, next) => {
     const query = { reportId: report._id, rowNumber: { $gt: 2 } };
     if (sheet) query.sheetName = sheet;
 
-    const rows = await QcRow.find(query).limit(30000).select("values").lean();
+    const headerRow = await QcRow.findOne({ reportId: report._id, rowNumber: 2 }).select("values").lean();
+    const headerMap = headerRow?.values || {};
+
+    const cursor = QcRow.find(query).select("values").lean().cursor();
     const columns = {};
 
-    for (const row of rows) {
+    let totalRows = 0;
+    for await (const row of cursor) {
+      totalRows += 1;
       const vals = row.values || {};
       for (const [col, raw] of Object.entries(vals)) {
-        if (!columns[col]) {
-          columns[col] = { counts: {}, blanks: 0, total: 0 };
-        }
-        columns[col].total += 1;
+        const headerTitle = headerMap[col] ? String(headerMap[col]).trim() : "";
+        const targetKeys = headerTitle && headerTitle !== col ? [col, headerTitle] : [col];
+
         const str = raw === null || raw === undefined ? "" : String(raw).trim();
-        if (!str || str === "—" || str === "-") {
-          columns[col].blanks += 1;
-        } else {
-          columns[col].counts[str] = (columns[col].counts[str] || 0) + 1;
+        const isBlank = !str || str === "—" || str === "-";
+        for (const k of targetKeys) {
+          if (!columns[k]) {
+            columns[k] = { counts: {}, blanks: 0, total: 0 };
+          }
+          columns[k].total += 1;
+          if (isBlank) {
+            columns[k].blanks += 1;
+          } else {
+            columns[k].counts[str] = (columns[k].counts[str] || 0) + 1;
+          }
         }
       }
     }
-
     return res.json({
-      totalRows: rows.length,
+      totalRows,
       columns,
     });
   } catch (error) {
     return next(error);
   }
 };
+
+/* DELETE_ME
+
+          if (isBlank) {
+
+  
+
+          }
+        }
+      }
+
+
+
+        }
+
+
+
+
+
+
+        }
+      }
+    }
+
+    return res.json({
+      totalRows,
+      columns,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+*/
 
 export const getReportQualitySummary = async (req, res, next) => {
   try {
@@ -504,7 +548,7 @@ export const getReportQualitySummary = async (req, res, next) => {
           dayCounts.forEach((count, index) => {
             day.counts[QUALITY_CLASSIFICATIONS[index].key] += count;
           });
-        } else {
+
           daily.push({
             date: item._id,
             totalRows: item.totalRows,

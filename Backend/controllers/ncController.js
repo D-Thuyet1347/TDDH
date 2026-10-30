@@ -28,8 +28,10 @@ export const uploadNcReport = async (req, res, next) => {
       originalName: req.file.originalname,
       maxRows: Number.parseInt(process.env.MONGODB_MAX_ROWS || "100000", 10),
     });
+    const sheetCount = report.sheets?.length || 1;
+    const sheetNames = report.sheets?.map((s) => `${s.name} (${s.rowCount.toLocaleString("vi-VN")} dòng)`).join(", ");
     return res.status(201).json({
-      message: "Đã tạo và lưu Tong_Hop_Don_Hang_HRC2.xlsx.",
+      message: `Đã đọc và tạo bảng thành công ${report.rows_imported.toLocaleString("vi-VN")} dòng trên ${sheetCount} sheet: ${sheetNames}.`,
       report,
     });
   } catch (error) {
@@ -53,17 +55,30 @@ export const listNcReports = async (req, res, next) => {
 export const downloadNcReport = async (req, res, next) => {
   try {
     const { filename, workbook } = await openOrderDemandWorkbook(req.params.reportId);
+    if (!workbook || (Buffer.isBuffer(workbook) && !workbook.length)) {
+      return res.status(404).json({ message: "Không tìm thấy nội dung file Excel." });
+    }
+    const cleanFilename = filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`;
+    const asciiFilename = cleanFilename.replace(/[^\x20-\x7E]/g, "_");
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="report.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`
+      `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(cleanFilename)}`
     );
-    if (Buffer.isBuffer(workbook)) return res.send(workbook);
-    workbook.on("error", next);
-    return workbook.pipe(res);
+    if (Buffer.isBuffer(workbook)) {
+      res.setHeader("Content-Length", workbook.length);
+      return res.end(workbook);
+    }
+    if (workbook.pipe) {
+      workbook.on("error", next);
+      return workbook.pipe(res);
+    }
+    const buf = Buffer.from(workbook);
+    res.setHeader("Content-Length", buf.length);
+    return res.end(buf);
   } catch (error) {
     return handleError(error, res, next);
   }

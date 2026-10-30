@@ -17,6 +17,7 @@ import userRouter from "./routes/userRouter.js";
 import qcRouter from "./routes/qcRouter.js";
 import ncRouter from "./routes/ncRouter.js";
 import { syncNcWithQc } from "./controllers/ncController.js";
+import { getQcColumnValues } from "./controllers/qcController.js";
 
 const app = express();
 const port = Number.parseInt(process.env.PORT || "5000", 10);
@@ -75,6 +76,7 @@ app.all("/api/sync-qc", syncNcWithQc);
 app.all("/api/nc/reports/:reportId/sync-qc", syncNcWithQc);
 app.all("/api/qc/reports/:reportId/sync-qc", syncNcWithQc);
 app.all("/api/reports/:reportId/sync-qc", syncNcWithQc);
+app.get("/api/reports/:reportId/column-values", getQcColumnValues);
 
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);

@@ -92,7 +92,7 @@ export const getReportRows = ({
   sheet,
   search = '',
   filters = {},
-  limit = 100,
+  limit = 30000,
   offset = 0,
   signal,
 }) =>
@@ -113,14 +113,21 @@ export const getReportQualitySummary = ({ reportId, signal }) =>
     { signal }
   ));
 
-export const getReportColumnValues = ({ reportId, sheet, signal }) =>
-  request(axios.get(
+export const getReportColumnValues = async ({ reportId, sheet, signal }) => {
+  const urls = [
     `${QC_API_URL}/reports/${encodeURIComponent(reportId)}/column-values`,
-    {
-      params: { sheet },
-      signal,
+    `${API_URL}/api/reports/${encodeURIComponent(reportId)}/column-values`,
+  ];
+  let lastError;
+  for (const url of urls) {
+    try {
+      return await request(axios.get(url, { params: { sheet }, signal }));
+    } catch (err) {
+      lastError = err;
     }
-  ));
+  }
+  throw lastError;
+};
 
 export const getOrderDemandColumnValues = ({ reportId, sheetName, signal }) =>
   request(axios.get(
@@ -133,7 +140,7 @@ export const getOrderDemandRows = ({
   sheetName,
   search = '',
   filters = {},
-  limit = 50,
+  limit = 30000,
   offset = 0,
   signal,
 }) =>

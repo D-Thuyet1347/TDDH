@@ -86,7 +86,7 @@ const SignInPage = () => {
 
           <div className="mb-8">
             <div className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-200/70">
-              Cổng vận hành HRC2
+              Theo dõi đơn hàng HRC2
             </div>
             <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900">Đăng nhập</h1>
             <p className="mt-1.5 text-sm leading-6 text-slate-500">

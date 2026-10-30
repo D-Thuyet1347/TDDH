@@ -21,7 +21,9 @@ import { Select } from '../components/ui/select';
 import { Table } from '../components/ui/table';
 import { nf, vnDateTime } from '../utils/ultils';
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 30000;
+const ROW_HEIGHT = 41;
+const OVERSCAN = 25;
 const LOAD_MORE_THRESHOLD = 240;
 const QUALITY_CLASSIFICATIONS = [
   { key: 'Loại 1 || PRIME', label: 'Loại 1 || PRIME' },
@@ -67,14 +69,29 @@ export default function DataPage() {
   const [filters, setFilters] = useState({});
   const [columnValues, setColumnValues] = useState({});
   const [sortState, setSortState] = useState(null); // { column: string, direction: 'asc' | 'desc' }
+  const [customLimit, setCustomLimit] = useState(PAGE_SIZE);
+  const [limitInput, setLimitInput] = useState(String(PAGE_SIZE));
   const [loadingReports, setLoadingReports] = useState(true);
   const [loadingRows, setLoadingRows] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const tableScrollRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
   const nextOffsetRef = useRef(0);
   const queryVersionRef = useRef(0);
   const loadingMoreRef = useRef(false);
+
+  useEffect(() => {
+    const updateViewport = () => {
+      if (tableScrollRef.current) {
+        setViewportHeight(tableScrollRef.current.clientHeight || 600);
+      }
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
 
   const activeFilterCount = useMemo(
     () => Object.values(filters).filter((val) => {
@@ -173,19 +190,10 @@ export default function DataPage() {
               setError(summaryError.message);
             }
           });
-        getReportColumnValues({ reportId, sheet, signal: controller.signal })
-          .then((res) => {
-            if (queryVersionRef.current === queryVersion && res?.columns) {
-              setColumnValues(res.columns);
-            }
-          })
-          .catch(() => {});
         const result = await getReportRows({
           reportId,
           sheet,
-          search,
-          filters,
-          limit: PAGE_SIZE + 1,
+          limit: customLimit,
           offset: 0,
           signal: controller.signal,
         });
@@ -196,11 +204,9 @@ export default function DataPage() {
           setHasGroupedHeaders(true);
           setHeaderRowsCount(groupedHeaderRows.length);
         }
-        const firstPageRows = result.rows
-          .filter((row) => !isQcColumnHeader(row))
-          .slice(0, PAGE_SIZE);
-        setRows(firstPageRows);
-        nextOffsetRef.current = firstPageRows.length + (groupedHeaderRows.length || 0);
+        const dataRows = result.rows.filter((row) => !isQcColumnHeader(row));
+        setRows(dataRows);
+        nextOffsetRef.current = dataRows.length + (groupedHeaderRows.length || 0);
         setTotal(result.total);
         setSheets(result.sheets);
       } catch (loadError) {
@@ -215,7 +221,72 @@ export default function DataPage() {
     };
     loadRows();
     return () => controller.abort();
-  }, [reportId, sheet, search, filters]);
+  }, [reportId, sheet, customLimit]);
+
+  const handleApplyLimit = (val) => {
+    const raw = val !== undefined ? val : limitInput;
+    const num = Math.min(200000, Math.max(1, Number.parseInt(raw, 10) || 30000));
+    setCustomLimit(num);
+    setLimitInput(String(num));
+  };
+
+  useEffect(() => {
+    if (!reportId) {
+      setColumnValues({});
+      return undefined;
+    }
+    const controller = new AbortController();
+    getReportColumnValues({ reportId, sheet, signal: controller.signal })
+      .then((res) => {
+        if (res?.columns) {
+          setColumnValues(res.columns);
+        }
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          console.warn('Lỗi tải danh sách giá trị bộ lọc:', err.message);
+        }
+      });
+    return () => controller.abort();
+  }, [reportId, sheet]);
+
+  const loadAllRows = async () => {
+    if (!reportId || loadingRows || loadingMoreRef.current) return;
+    const queryVersion = queryVersionRef.current;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const targetLimit = Math.max(PAGE_SIZE, visibleTotal || 0, customLimit);
+      setCustomLimit(targetLimit);
+      setLimitInput(String(targetLimit));
+      const result = await getReportRows({
+        reportId,
+        sheet,
+        search,
+        filters,
+        limit: targetLimit,
+        offset: 0,
+      });
+      if (queryVersionRef.current !== queryVersion) return;
+      const groupedHeaderRows = result.rows.filter(isQcColumnHeader);
+      if (groupedHeaderRows.length > 0) {
+        setColumnHeaders(groupedHeaderRows[0]?.values || null);
+        setHasGroupedHeaders(true);
+        setHeaderRowsCount(groupedHeaderRows.length);
+      }
+      const dataRows = result.rows.filter((row) => !isQcColumnHeader(row));
+      setRows(dataRows);
+      nextOffsetRef.current = dataRows.length + (groupedHeaderRows.length || 0);
+      setTotal(result.total);
+    } catch (loadError) {
+      if (queryVersionRef.current === queryVersion) setError(loadError.message);
+    } finally {
+      if (queryVersionRef.current === queryVersion) {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
+    }
+  };
 
   const loadMoreRows = async () => {
     if (
@@ -235,7 +306,7 @@ export default function DataPage() {
         sheet,
         search,
         filters,
-        limit: PAGE_SIZE,
+        limit: customLimit || PAGE_SIZE,
         offset,
       });
       if (queryVersionRef.current !== queryVersion) return;
@@ -256,7 +327,11 @@ export default function DataPage() {
 
   const handleTableScroll = (event) => {
     const element = event.currentTarget;
-    if (element.scrollHeight - element.scrollTop - element.clientHeight <= LOAD_MORE_THRESHOLD) {
+    setScrollTop(element.scrollTop);
+    if (
+      rows.length < visibleTotal &&
+      element.scrollHeight - element.scrollTop - element.clientHeight <= LOAD_MORE_THRESHOLD
+    ) {
       void loadMoreRows();
     }
   };
@@ -356,6 +431,19 @@ export default function DataPage() {
     return result;
   }, [rows, search, filters, sortState]);
 
+  const totalFilteredCount = filteredRows.length;
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT) + 2 * OVERSCAN;
+  const endIndex = Math.min(totalFilteredCount, startIndex + visibleCount);
+
+  const visibleRows = useMemo(() => {
+    if (totalFilteredCount <= 120) return filteredRows;
+    return filteredRows.slice(startIndex, endIndex);
+  }, [filteredRows, startIndex, endIndex, totalFilteredCount]);
+
+  const topSpacerHeight = totalFilteredCount <= 120 ? 0 : startIndex * ROW_HEIGHT;
+  const bottomSpacerHeight = totalFilteredCount <= 120 ? 0 : Math.max(0, (totalFilteredCount - endIndex) * ROW_HEIGHT);
+
   const selectReport = (event) => {
     const nextId = event.target.value;
     setReportId(nextId);
@@ -414,7 +502,7 @@ export default function DataPage() {
 
         {/* Filter controls */}
         <Card className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
-          <div className="grid grid-cols-1 gap-3.5 md:grid-cols-[minmax(0,2fr)_minmax(180px,1fr)_minmax(200px,1fr)]">
+          <div className="grid grid-cols-1 gap-3.5 md:grid-cols-[minmax(0,1.8fr)_minmax(150px,1fr)_minmax(180px,1fr)_minmax(210px,1.2fr)]">
             <label className="min-w-0">
               <span className="mb-1.5 block text-xs font-bold text-slate-700">Báo cáo</span>
               <Select
@@ -448,9 +536,55 @@ export default function DataPage() {
                 value={search}
                 maxLength={100}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Tìm trong các dòng đã tải…"
+                placeholder="Tìm trong dữ liệu…"
                 className="h-10 w-full pl-9 pr-3 text-xs"
               />
+            </label>
+            <label>
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700">Giới hạn đọc dữ liệu</span>
+                <div className="flex items-center gap-1">
+                  {[5000, 10000, 30000, 50000].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => handleApplyLimit(preset)}
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                        customLimit === preset
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {preset >= 1000 ? `${preset / 1000}k` : preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  min={1}
+                  max={200000}
+                  step={1000}
+                  value={limitInput}
+                  onChange={(event) => setLimitInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') handleApplyLimit();
+                  }}
+                  placeholder="VD: 30000"
+                  className="h-10 w-full text-xs font-semibold"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleApplyLimit()}
+                  disabled={loadingRows || Number(limitInput) === customLimit}
+                  className="h-10 shrink-0 rounded-xl border-indigo-200 bg-indigo-50 px-3 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+                >
+                  Áp dụng
+                </Button>
+              </div>
             </label>
           </div>
 
@@ -565,10 +699,24 @@ export default function DataPage() {
           </div>
         ) : rows.length > 0 ? (
           <Card className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-card">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 text-xs font-semibold text-slate-500 bg-slate-50/50">
-              <span>
-                Đang hiển thị <strong className="text-slate-900">{filteredRows.length.toLocaleString('vi-VN')}</strong> / {visibleTotal.toLocaleString('vi-VN')} dòng
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5 text-xs font-semibold text-slate-500 bg-slate-50/50">
+              <div className="flex flex-wrap items-center gap-3">
+                <span>
+                  Đang hiển thị <strong className="text-slate-900">{filteredRows.length.toLocaleString('vi-VN')}</strong> / {visibleTotal.toLocaleString('vi-VN')} dòng
+                </span>
+                {rows.length < visibleTotal && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={loadAllRows}
+                    disabled={loadingMore || loadingRows}
+                    className="h-7 rounded-lg border-indigo-200 bg-indigo-50/80 px-2.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100"
+                  >
+                    {loadingMore ? 'Đang tải…' : `Tải tất cả ${visibleTotal.toLocaleString('vi-VN')} dòng`}
+                  </Button>
+                )}
+              </div>
               {sortState?.column && (
                 <span className="text-[11px] font-medium text-indigo-600">
                   Đang sắp xếp: {columnHeaders?.[sortState.column] || sortState.column} ({sortState.direction === 'asc' ? 'A → Z' : 'Z → A'})
@@ -602,7 +750,7 @@ export default function DataPage() {
                             columnKey={column}
                             title={String(columnHeaders?.[column] || column)}
                             rows={rows}
-                            allColumnValues={columnValues[column]}
+                            allColumnValues={columnValues[column] || (columnHeaders?.[column] ? columnValues[columnHeaders[column]] : undefined)}
                             activeFilter={filters[column]}
                             sortState={sortState}
                             onApplyFilter={handleApplyFilter}
@@ -615,7 +763,12 @@ export default function DataPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredRows.map((row) => (
+                  {topSpacerHeight > 0 && (
+                    <tr style={{ height: `${topSpacerHeight}px` }}>
+                      <td colSpan={columns.length + (hasGroupedHeaders ? 0 : 1)} className="p-0 border-0" />
+                    </tr>
+                  )}
+                  {visibleRows.map((row) => (
                     <tr key={row._id} className="transition-colors hover:bg-indigo-50/30">
                       {!hasGroupedHeaders && (
                         <td className="whitespace-nowrap px-3 py-3 font-medium text-slate-500 border-r border-slate-100">
@@ -631,6 +784,11 @@ export default function DataPage() {
                       ))}
                     </tr>
                   ))}
+                  {bottomSpacerHeight > 0 && (
+                    <tr style={{ height: `${bottomSpacerHeight}px` }}>
+                      <td colSpan={columns.length + (hasGroupedHeaders ? 0 : 1)} className="p-0 border-0" />
+                    </tr>
+                  )}
                   {filteredRows.length === 0 && (
                     <tr>
                       <td colSpan={columns.length + (hasGroupedHeaders ? 0 : 1)} className="px-4 py-12 text-center text-xs font-medium text-slate-500">

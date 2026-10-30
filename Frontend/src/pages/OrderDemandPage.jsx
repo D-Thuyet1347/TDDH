@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import axios from 'axios';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
+  BarChart3,
   Check,
   ClipboardList,
   Copy,
@@ -37,7 +39,7 @@ import { Select } from '../components/ui/select';
 import { Table } from '../components/ui/table';
 
 const SHEET_NAME = 'Nhu cầu đơn hàng HRC';
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 30000;
 const LOAD_MORE_THRESHOLD = 240;
 
 const columnDefinitions = [
@@ -100,8 +102,82 @@ const normalizeRowValues = (values = {}) => {
   return normalized;
 };
 
-const formatCell = (value) => {
+const NUMBER_COLUMNS = new Set([
+  'kl_1c',
+  'kl_1d',
+  'thua_thieu_so_voi_zbc04b',
+  'loai_1',
+  'loai_2',
+  'cho_xu_ly',
+  'cho_skin',
+  'tong_sl_sx_kcs',
+  'ke_hoach_can',
+  'ton_phoi',
+  'ket_qua_can',
+]);
+
+const ID_COLUMNS = new Set([
+  'po',
+  'xx',
+  'cw',
+  'thang',
+  'dot',
+  'tdc_code',
+  'ma_khach_hang',
+  'mac_thep',
+  'txw',
+  't',
+  'w',
+  'day_muc_tieu',
+  'nhu_cau',
+  'khach_hang',
+  'thoi_gian_giao_hang',
+  'tdc',
+  'yeu_cau_dac_biet_skin_skin',
+  'ten_goi',
+  'ycdb',
+  'tinh_trang',
+  'phoi_tam_6_12m_ty_le_1a_hoac_loai_1ab_sau_skin_ty_le_1b_sau_skin',
+  'quy_cach_phoi_tam',
+]);
+
+const formatCell = (value, columnKey = '') => {
   if (value === null || value === undefined || value === '') return '—';
+  
+  const key = String(columnKey || '').toLowerCase();
+  
+  // Không format phân cách hàng nghìn cho các cột mã hoặc ký hiệu
+  if (ID_COLUMNS.has(key)) {
+    return String(value);
+  }
+
+  const isExplicitNumberCol = NUMBER_COLUMNS.has(key) ||
+    key.startsWith('kl_') ||
+    key.includes('loai_') ||
+    key.includes('cho_') ||
+    key.includes('kcs') ||
+    key.includes('thua_thieu') ||
+    key.includes('ton_phoi') ||
+    key.includes('ke_hoach') ||
+    key.includes('ket_qua');
+
+  if (typeof value === 'number') {
+    if (Number.isFinite(value)) {
+      return value.toLocaleString('en-US', { maximumFractionDigits: 3 });
+    }
+    return String(value);
+  }
+
+  const cleanStr = String(value).trim().replace(/\s+/g, '').replace(/,/g, '');
+  if (/^-?\d+(\.\d+)?$/.test(cleanStr)) {
+    const num = parseFloat(cleanStr);
+    if (Number.isFinite(num)) {
+      if (isExplicitNumberCol || Math.abs(num) >= 1000 || cleanStr.includes('.')) {
+        return num.toLocaleString('en-US', { maximumFractionDigits: 3 });
+      }
+    }
+  }
+
   return String(value);
 };
 
@@ -121,12 +197,17 @@ export default function OrderDemandPage() {
   const requestedReportId = searchParams.get('job_id') || '';
   const [reports, setReports] = useState([]);
   const [reportId, setReportId] = useState('');
+  const requestedSheet = searchParams.get('sheet') || '';
+  const [sheet, setSheet] = useState(requestedSheet || SHEET_NAME);
+  const [sheets, setSheets] = useState([]);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({});
   const [columnValues, setColumnValues] = useState({});
   const [sortState, setSortState] = useState(null); // { column: string, direction: 'asc' | 'desc' }
+  const [customLimit, setCustomLimit] = useState(PAGE_SIZE);
+  const [limitInput, setLimitInput] = useState(String(PAGE_SIZE));
   const [loadingReports, setLoadingReports] = useState(true);
   const [loadingRows, setLoadingRows] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -138,6 +219,7 @@ export default function OrderDemandPage() {
   const [saving, setSaving] = useState(false);
   const [syncingQc, setSyncingQc] = useState(false);
   const [deletingRowId, setDeletingRowId] = useState('');
+  const [downloadingFile, setDownloadingFile] = useState(false);
   const tableScrollRef = useRef(null);
   const queryVersionRef = useRef(0);
   const loadingMoreRef = useRef(false);
@@ -160,6 +242,12 @@ export default function OrderDemandPage() {
           (report) => report.job_id === requestedReportId
         ) || availableReports[0];
         setReportId(selected?.job_id || '');
+        if (selected?.sheets?.length) {
+          const matchedSheet = selected.sheets.find((s) => s.name === requestedSheet) ||
+            selected.sheets.find((s) => s.name === SHEET_NAME) ||
+            selected.sheets[0];
+          if (matchedSheet) setSheet(matchedSheet.name);
+        }
       })
       .catch((loadError) => {
         if (!controller.signal.aborted) setError(loadError.message);
@@ -171,25 +259,48 @@ export default function OrderDemandPage() {
   }, [requestedReportId]);
 
   const selectedReport = reports.find((report) => report.job_id === reportId);
+  const availableSheets = useMemo(() => {
+    if (selectedReport?.sheets?.length) return selectedReport.sheets;
+    if (sheets.length) return sheets;
+    return [{ name: SHEET_NAME, rowCount: total }];
+  }, [selectedReport, sheets, total]);
+
+  const currentSheetObj = useMemo(() => {
+    return availableSheets.find((s) => s.name === sheet) || availableSheets[0];
+  }, [availableSheets, sheet]);
+
+  const isMainOrderSheet = useMemo(() => {
+    const sName = sheet || '';
+    return sName === SHEET_NAME || sName.toLowerCase().includes('nhu cau') || sName.toLowerCase().includes('nhu cầu');
+  }, [sheet]);
+
   const sheetColumns = useMemo(
-    () => selectedReport?.sheets?.find(
-      (sheet) => sheet.name === SHEET_NAME
-    )?.columns.map(normalizeColumnKey) || [],
-    [selectedReport]
+    () => currentSheetObj?.columns?.map(normalizeColumnKey) || [],
+    [currentSheetObj]
   );
-  const columns = useMemo(
-    () => [...new Set([...columnDefinitions.map(({ key }) => key), ...sheetColumns])]
-      .map((key) => ({
-        key,
-        ...(columnDefinitionByKey.get(key) || {
-          title: key,
-          width: 'min-w-24',
-          color: 'bg-indigo-50/90 text-indigo-900 border-indigo-100',
-        }),
-      }))
-      .filter((column) => !isExtraColumn(column.key)),
-    [sheetColumns]
-  );
+  const columns = useMemo(() => {
+    if (isMainOrderSheet) {
+      return [...new Set([...columnDefinitions.map(({ key }) => key), ...sheetColumns])]
+        .map((key) => ({
+          key,
+          ...(columnDefinitionByKey.get(key) || {
+            title: key,
+            width: 'min-w-24',
+            color: 'bg-indigo-50/90 text-indigo-900 border-indigo-100',
+          }),
+        }))
+        .filter((column) => !isExtraColumn(column.key));
+    }
+    const uniqueCols = [...new Set([...(currentSheetObj?.columns || []), ...rows.flatMap((r) => Object.keys(r.values || {}))])]
+      .filter((c) => !isExtraColumn(c));
+    if (uniqueCols.length === 0) return columnDefinitions;
+    return uniqueCols.map((key) => ({
+      key,
+      title: columnDefinitionByKey.get(key)?.title || key,
+      width: 'min-w-32',
+      color: 'bg-slate-50/90 text-slate-800 border-slate-200',
+    }));
+  }, [isMainOrderSheet, sheetColumns, currentSheetObj, rows]);
 
   useEffect(() => {
     const queryVersion = queryVersionRef.current + 1;
@@ -210,15 +321,16 @@ export default function OrderDemandPage() {
     setError('');
     getOrderDemandRows({
       reportId,
-      sheetName: SHEET_NAME,
+      sheetName: sheet || SHEET_NAME,
       search,
       filters,
-      limit: PAGE_SIZE,
+      limit: customLimit,
       offset: 0,
       signal: controller.signal,
     })
       .then((result) => {
         if (queryVersionRef.current !== queryVersion) return;
+        if (result.sheets) setSheets(result.sheets);
         setRows(result.rows.map((row) => ({
           ...row,
           values: normalizeRowValues(row.values),
@@ -234,7 +346,14 @@ export default function OrderDemandPage() {
         }
       });
     return () => controller.abort();
-  }, [reportId, search, filters, reloadKey]);
+  }, [reportId, sheet, search, filters, reloadKey, customLimit]);
+
+  const handleApplyLimit = (val) => {
+    const raw = val !== undefined ? val : limitInput;
+    const num = Math.min(200000, Math.max(1, Number.parseInt(raw, 10) || 30000));
+    setCustomLimit(num);
+    setLimitInput(String(num));
+  };
 
   useEffect(() => {
     if (!reportId) {
@@ -242,13 +361,13 @@ export default function OrderDemandPage() {
       return undefined;
     }
     const controller = new AbortController();
-    getOrderDemandColumnValues({ reportId, sheetName: SHEET_NAME, signal: controller.signal })
+    getOrderDemandColumnValues({ reportId, sheetName: sheet || SHEET_NAME, signal: controller.signal })
       .then((res) => {
         if (res?.columns) setColumnValues(res.columns);
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [reportId, reloadKey]);
+  }, [reportId, sheet, reloadKey]);
 
   const loadMoreRows = useCallback(async () => {
     if (
@@ -265,10 +384,10 @@ export default function OrderDemandPage() {
     try {
       const result = await getOrderDemandRows({
         reportId,
-        sheetName: SHEET_NAME,
+        sheetName: sheet || SHEET_NAME,
         search,
         filters,
-        limit: PAGE_SIZE,
+        limit: customLimit,
         offset: nextOffset,
       });
       if (queryVersionRef.current === queryVersion) {
@@ -316,6 +435,11 @@ export default function OrderDemandPage() {
   const selectReport = (event) => {
     const nextReportId = event.target.value;
     setReportId(nextReportId);
+    const targetReport = reports.find((r) => r.job_id === nextReportId);
+    if (targetReport?.sheets?.length) {
+      const defaultSheet = targetReport.sheets.find((s) => s.name === SHEET_NAME) || targetReport.sheets[0];
+      setSheet(defaultSheet.name);
+    }
     setSearchParams(nextReportId ? { job_id: nextReportId } : {});
     setSearch('');
     setFilters({});
@@ -382,15 +506,55 @@ export default function OrderDemandPage() {
     setNotice('');
     try {
       const res = await syncOrderDemandQc({ reportId });
+      const s = res.stats || {};
+      const scannedInfo = s.totalQcCoilsScanned
+        ? ` (Đã quét ${s.totalQcCoilsScanned.toLocaleString('vi-VN')} cuộn QC | Loại 1: ${(s.totalLoai1 || 0).toLocaleString('vi-VN')} kg, Loại 2: ${(s.totalLoai2 || 0).toLocaleString('vi-VN')} kg, Chờ XL: ${(s.totalChoXuLy || 0).toLocaleString('vi-VN')} kg, Chờ Skin: ${(s.totalChoSkin || 0).toLocaleString('vi-VN')} kg)`
+        : '';
       setNotice(
-        res.message ||
-        `Đã đồng nhất thành công dữ liệu QC: Cập nhật ${res.stats?.matchedRows ?? 0} dòng nhu cầu!`
+        `${res.message || `Đã đồng nhất thành công dữ liệu QC: Cập nhật ${s.matchedRows ?? 0} dòng nhu cầu!`}${scannedInfo}`
       );
       setReloadKey((key) => key + 1);
     } catch (err) {
       setError(err.message || 'Lỗi khi đồng nhất dữ liệu QC.');
     } finally {
       setSyncingQc(false);
+    }
+  };
+
+  const handleDownloadExcel = async () => {
+    if (!reportId || downloadingFile) return;
+    setDownloadingFile(true);
+    setError('');
+    try {
+      const url = getOrderDemandReportFileUrl(reportId);
+      const res = await axios.get(url, { responseType: 'blob' });
+      if (res.data?.type === 'application/json') {
+        const text = await res.data.text();
+        let msg = 'Lỗi khi tải file Excel.';
+        try {
+          const json = JSON.parse(text);
+          msg = json.message || msg;
+        } catch {
+          // ignore
+        }
+        throw new Error(msg);
+      }
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      const downloadName = `${(selectedReport?.filename || 'Tong_Hop_Don_Hang_HRC2').replace(/\.[^/.]+$/, '')}.xlsx`;
+      link.setAttribute('download', downloadName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      setError(err.message || 'Không thể tải file Excel.');
+    } finally {
+      setDownloadingFile(false);
     }
   };
 
@@ -420,7 +584,7 @@ export default function OrderDemandPage() {
       if (dialog?.mode === 'edit' && dialog.rowId) {
         await updateOrderDemandRow({
           reportId,
-          sheetName: SHEET_NAME,
+          sheetName: sheet || SHEET_NAME,
           rowId: dialog.rowId,
           values: formValues,
         });
@@ -428,7 +592,7 @@ export default function OrderDemandPage() {
       } else {
         await createOrderDemandRow({
           reportId,
-          sheetName: SHEET_NAME,
+          sheetName: sheet || SHEET_NAME,
           values: formValues,
         });
         setNotice(dialog?.mode === 'copy'
@@ -457,7 +621,7 @@ export default function OrderDemandPage() {
     try {
       await deleteOrderDemandRow({
         reportId,
-        sheetName: SHEET_NAME,
+        sheetName: sheet || SHEET_NAME,
         rowId: row._id,
       });
       setNotice('Đã xóa dòng nhu cầu đơn hàng.');
@@ -491,13 +655,29 @@ export default function OrderDemandPage() {
               Quản lý và tra cứu dữ liệu nhu cầu đơn hàng với bộ lọc Excel đa năng.
             </p>
           </div>
-          {selectedReport && (
-            <Button asChild variant="outline" size="sm" className="h-10 rounded-xl border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50">
-              <a href={getOrderDemandReportFileUrl(reportId)}>
-                <Download size={15} /> Tải file Excel
-              </a>
+          <div className="flex items-center gap-2.5">
+            <Button asChild variant="outline" size="sm" className="h-10 rounded-xl border-indigo-200 bg-indigo-50/80 px-4 text-xs font-bold text-indigo-700 shadow-xs hover:bg-indigo-100">
+              <Link to={`/order-charts${reportId ? `?job_id=${encodeURIComponent(reportId)}` : ''}`}>
+                <BarChart3 size={15} /> Xem biểu đồ phân tích
+              </Link>
             </Button>
-          )}
+            {selectedReport && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 rounded-xl border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50"
+                disabled={downloadingFile}
+                onClick={handleDownloadExcel}
+              >
+                {downloadingFile ? (
+                  <LoaderCircle size={15} className="animate-spin text-indigo-600" />
+                ) : (
+                  <Download size={15} />
+                )}
+                {downloadingFile ? 'Đang chuẩn bị file…' : 'Tải file Excel'}
+              </Button>
+            )}
+          </div>
         </header>
 
         {error && (
@@ -526,24 +706,52 @@ export default function OrderDemandPage() {
               </span>
             </div>
 
-            <label className="ml-auto min-w-48 flex-1 sm:max-w-72">
-              <span className="sr-only">Báo cáo</span>
-              <Select
-                value={reportId}
-                onChange={selectReport}
-                disabled={loadingReports || reports.length === 0}
-                className="h-10 w-full"
-              >
-                <option value="">
-                  {loadingReports ? 'Đang tải báo cáo…' : 'Chưa có báo cáo nhu cầu'}
-                </option>
-                {reports.map((report) => (
-                  <option key={report.job_id} value={report.job_id}>
-                    {report.filename}
+            <div className="ml-auto flex flex-wrap items-center gap-3">
+              <label className="min-w-44 flex-1 sm:max-w-60">
+                <span className="sr-only">Báo cáo</span>
+                <Select
+                  value={reportId}
+                  onChange={selectReport}
+                  disabled={loadingReports || reports.length === 0}
+                  className="h-10 w-full text-xs font-semibold"
+                >
+                  <option value="">
+                    {loadingReports ? 'Đang tải báo cáo…' : 'Chưa có báo cáo nhu cầu'}
                   </option>
-                ))}
-              </Select>
-            </label>
+                  {reports.map((report) => (
+                    <option key={report.job_id} value={report.job_id}>
+                      {report.filename}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+
+              <label className="min-w-44 flex-1 sm:max-w-64">
+                <span className="sr-only">Sheet dữ liệu</span>
+                <Select
+                  value={sheet}
+                  onChange={(e) => {
+                    const nextSheet = e.target.value;
+                    setSheet(nextSheet);
+                    setFilters({});
+                    setSortState(null);
+                    setSearchParams((prev) => {
+                      const next = new URLSearchParams(prev);
+                      next.set('sheet', nextSheet);
+                      return next;
+                    });
+                  }}
+                  disabled={!reportId || loadingRows || availableSheets.length === 0}
+                  className="h-10 w-full text-xs font-semibold"
+                >
+                  {availableSheets.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      📄 {s.name} ({s.rowCount?.toLocaleString('vi-VN') || 0} dòng)
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            </div>
           </div>
 
           {/* Search, Action bar & Filter reset */}
@@ -558,6 +766,49 @@ export default function OrderDemandPage() {
                 className="h-10 w-full pl-10 pr-3 text-xs"
               />
             </label>
+
+            <div className="flex items-center gap-1.5 min-w-56">
+              <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Giới hạn:</span>
+              <div className="flex items-center gap-1 mr-0.5">
+                {[5000, 10000, 30000, 50000].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => handleApplyLimit(preset)}
+                    className={`rounded px-1.5 py-1 text-[10px] font-semibold transition-colors ${
+                      customLimit === preset
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-200/80 text-slate-600 hover:bg-slate-300'
+                    }`}
+                  >
+                    {preset >= 1000 ? `${preset / 1000}k` : preset}
+                  </button>
+                ))}
+              </div>
+              <Input
+                type="number"
+                min={1}
+                max={200000}
+                step={1000}
+                value={limitInput}
+                onChange={(event) => setLimitInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') handleApplyLimit();
+                }}
+                placeholder="VD: 30000"
+                className="h-10 w-24 text-xs font-semibold"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleApplyLimit()}
+                disabled={loadingRows || Number(limitInput) === customLimit}
+                className="h-10 shrink-0 rounded-xl border-indigo-200 bg-indigo-50 px-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+              >
+                Áp dụng
+              </Button>
+            </div>
 
             <Button
               type="button"
@@ -655,16 +906,56 @@ export default function OrderDemandPage() {
                   </tr>
                 ) : sortedRows.length ? sortedRows.map((row) => (
                   <tr key={row._id} className="transition-colors hover:bg-indigo-50/30">
-                    {columns.map((column) => (
-                      <td
-                        key={column.key}
-                        className={`${column.width} h-10 border-b border-r border-slate-100 px-2.5 py-2 text-xs text-slate-800`}
-                      >
-                        <span className="block max-w-80 truncate" title={formatCell(row.values?.[column.key])}>
-                          {formatCell(row.values?.[column.key])}
-                        </span>
-                      </td>
-                    ))}
+                    {columns.map((column) => {
+                      const val = row.values?.[column.key];
+
+                      if (column.key === 'tinh_trang') {
+                        let statusText = String(val ?? '').trim();
+                        if (!statusText) {
+                          const target = parseFloat(String(row.values?.kl_1c || row.values?.kl_1d || 0).replace(/,/g, ''));
+                          const kcs = parseFloat(String(row.values?.tong_sl_sx_kcs || 0).replace(/,/g, ''));
+                          if (target > 0) {
+                            statusText = kcs >= target ? 'Hoàn thành' : 'Chưa hoàn thành';
+                          }
+                        }
+
+                        const isDone = /hoàn\s*thành|hoan\s*thanh|completed|done/i.test(statusText) && !/chưa|chua|không|khong/i.test(statusText);
+                        const isNotDone = /chưa|chua|không|khong|dang|đang|incomplete/i.test(statusText);
+
+                        let badgeClass = 'text-slate-600 bg-slate-100 ring-slate-200';
+                        if (isDone) {
+                          badgeClass = 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/30 font-bold';
+                        } else if (isNotDone || statusText) {
+                          badgeClass = 'bg-rose-50 text-rose-700 ring-1 ring-rose-600/30 font-bold';
+                        }
+
+                        return (
+                          <td
+                            key={column.key}
+                            className={`${column.width} h-10 border-b border-r border-slate-100 px-2 py-1.5 text-xs text-center align-middle`}
+                          >
+                            {statusText ? (
+                              <span className={`inline-flex items-center justify-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] ring-1 ring-inset ${badgeClass}`}>
+                                {statusText}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                        );
+                      }
+
+                      return (
+                        <td
+                          key={column.key}
+                          className={`${column.width} h-10 border-b border-r border-slate-100 px-2.5 py-2 text-xs text-slate-800`}
+                        >
+                          <span className="block max-w-80 truncate" title={formatCell(val, column.key)}>
+                            {formatCell(val, column.key)}
+                          </span>
+                        </td>
+                      );
+                    })}
                     <td className="sticky right-0 border-b border-slate-100 bg-white/95 px-2.5 py-2 backdrop-blur-xs">
                       <div className="flex items-center justify-center gap-1">
                         <Button
@@ -762,16 +1053,31 @@ export default function OrderDemandPage() {
                     <span className="mb-1 block truncate text-xs font-bold text-slate-700" title={column.title}>
                       {column.title}
                     </span>
-                    <Input
-                      type="text"
-                      maxLength={20000}
-                      value={formValues[column.key] ?? ''}
-                      onChange={(event) => setFormValues((values) => ({
-                        ...values,
-                        [column.key]: event.target.value,
-                      }))}
-                      className="h-9 w-full"
-                    />
+                    {column.key === 'tinh_trang' ? (
+                      <Select
+                        value={formValues[column.key] ?? ''}
+                        onChange={(event) => setFormValues((values) => ({
+                          ...values,
+                          [column.key]: event.target.value,
+                        }))}
+                        className="h-9 w-full text-xs font-semibold"
+                      >
+                        <option value="">(Tự động tính theo tiến độ)</option>
+                        <option value="Hoàn thành">🟢 Hoàn thành</option>
+                        <option value="Chưa hoàn thành">🔴 Chưa hoàn thành</option>
+                      </Select>
+                    ) : (
+                      <Input
+                        type="text"
+                        maxLength={20000}
+                        value={formValues[column.key] ?? ''}
+                        onChange={(event) => setFormValues((values) => ({
+                          ...values,
+                          [column.key]: event.target.value,
+                        }))}
+                        className="h-9 w-full"
+                      />
+                    )}
                   </label>
                 ))}
               </div>
