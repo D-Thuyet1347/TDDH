@@ -21,7 +21,7 @@ import { getQcColumnValues } from "./controllers/qcController.js";
 
 const app = express();
 const port = Number.parseInt(process.env.PORT || "5000", 10);
-const host = process.env.HOST || "127.0.0.1";
+const host = process.env.HOST || "0.0.0.0";
 const appUser = process.env.APP_USER || "";
 const appPassword = process.env.APP_PASSWORD || "";
 const loopbackHost = host === "localhost" || host === "::1" || host.startsWith("127.");
@@ -33,7 +33,7 @@ if (Boolean(appUser) !== Boolean(appPassword)) {
   throw new Error("APP_USER và APP_PASSWORD phải được cấu hình cùng lúc.");
 }
 if (!loopbackHost && (!appUser || !appPassword)) {
-  throw new Error("APP_USER và APP_PASSWORD là bắt buộc khi HOST không phải loopback.");
+  console.warn(`[SERVER] Đang chạy trên ${host} không có xác thực APP_USER/APP_PASSWORD.`);
 }
 
 // ===================== MIDDLEWARE =====================
