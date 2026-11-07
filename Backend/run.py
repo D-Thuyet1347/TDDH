@@ -30,6 +30,11 @@ def free_port_if_in_use(port: int):
             pass
 
 if __name__ == "__main__":
-    free_port_if_in_use(PORT)
-    print(f"[Python Server] Starting on http://{HOST}:{PORT}")
-    uvicorn.run("main:app", host=HOST, port=PORT, reload=True)
+    is_prod = bool(os.environ.get("RENDER") or os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT"))
+    reload_mode = not is_prod and os.environ.get("RELOAD", "true").lower() in ("true", "1")
+
+    if not is_prod:
+        free_port_if_in_use(PORT)
+
+    print(f"[Python Server] Starting on http://{HOST}:{PORT} (reload={reload_mode})")
+    uvicorn.run("main:app", host=HOST, port=PORT, reload=reload_mode)
