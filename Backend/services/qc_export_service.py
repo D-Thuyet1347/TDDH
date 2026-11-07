@@ -286,7 +286,6 @@ async def ensure_qc_export_report(report_id: str) -> dict:
         VALUES (?, ?, ?, 'qc', ?, 1, 0, '[]', ?, ?)
     """, (rid, filename, filename, now, now, now))
     return {"reportId": rid, "filename": Path(filename).stem}
-    return {"reportId": str(oid), "filename": Path(filename).stem}
 
 async def create_export_job(data: dict) -> dict:
     validated = validate_qc_export_input(data)

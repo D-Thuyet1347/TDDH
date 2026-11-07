@@ -256,7 +256,7 @@ export default function OrderDemandPage() {
         if (!controller.signal.aborted) setLoadingReports(false);
       });
     return () => controller.abort();
-  }, [requestedReportId]);
+  }, [requestedReportId, requestedSheet]);
 
   const selectedReport = reports.find((report) => report.job_id === reportId);
   const availableSheets = useMemo(() => {
@@ -408,7 +408,7 @@ export default function OrderDemandPage() {
         setLoadingMore(false);
       }
     }
-  }, [reportId, loadingRows, rows.length, total, search, filters]);
+  }, [reportId, loadingRows, rows.length, total, search, filters, customLimit, sheet]);
 
   const handleTableScroll = (event) => {
     const element = event.currentTarget;
