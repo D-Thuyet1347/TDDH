@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000';
+const API_URL = process.env.REACT_APP_API_URL !== undefined
+  ? process.env.REACT_APP_API_URL
+  : (process.env.NODE_ENV === 'production' ? '' : 'http://127.0.0.1:5000');
 const QC_API_URL = `${API_URL}/api/qc`;
 const NC_API_URL = `${API_URL}/api/nc`;
 
