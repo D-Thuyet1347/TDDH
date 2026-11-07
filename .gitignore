@@ -11,6 +11,7 @@ Backend/uploads/
 *.xlsx
 *.xls
 !Frontend/THEO DÕI ĐƠN HÀNG NM.HRC2.xlsx
+!HUONG_DAN_DOCKER.xlsx
 
 # Python cache & virtual environment
 __pycache__/
