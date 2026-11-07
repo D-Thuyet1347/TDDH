@@ -11,6 +11,7 @@ import ReportsPage from './pages/ReportsPage';
 import DataPage from './pages/DataPage';
 import OrderDemandPage from './pages/OrderDemandPage';
 import OrderChartsPage from './pages/OrderChartsPage';
+import SkinPage from './pages/SkinPage';
 
 function App() {
   return (
@@ -25,13 +26,13 @@ function App() {
           <Route path="/orders" element={<OrderDemandPage />} />
           <Route path="/order-charts" element={<OrderChartsPage />} />
           <Route path="/data" element={<DataPage />} />
+          <Route path="/skin" element={<SkinPage />} />
           <Route path="/sheets/:sheetName" element={<DataPage />} />
           <Route path="/sign-up" element={<SignUpPage />} />
           <Route path="*" element={<Page404 />} />
         </Routes>    
       </AuthProvider>
       <ToastContainerWrapper />
-
     </>
   );
 }

@@ -1,0 +1,42 @@
+# Databases
+*.sqlite
+*.sqlite3
+*.db
+Backend/data/
+Backend/database.sqlite
+
+# Excel exports & temporary uploads
+Backend/exports/
+Backend/uploads/
+*.xlsx
+*.xls
+!Frontend/THEO DÕI ĐƠN HÀNG NM.HRC2.xlsx
+
+# Python cache & virtual environment
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.env
+
+# Node & Frontend
+node_modules/
+Frontend/node_modules/
+Frontend/build/
+.npm
+.eslintcache
+
+# Playwright
+.playwright/
+ms-playwright/
+playwright-report/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -21,7 +21,7 @@ import { Select } from '../components/ui/select';
 import { Table } from '../components/ui/table';
 import { nf, vnDateTime } from '../utils/ultils';
 
-const PAGE_SIZE = 30000;
+const PAGE_SIZE = 1000;
 const ROW_HEIGHT = 41;
 const OVERSCAN = 25;
 const LOAD_MORE_THRESHOLD = 240;
@@ -34,6 +34,8 @@ const QUALITY_CLASSIFICATIONS = [
 const SKIN_HANDLING_TYPES = [
   { key: 'SKIN', label: 'SKIN' },
   { key: 'SKIN_CUST', label: 'SKIN_CUST' },
+  { key: 'CXL', label: 'CXL' },
+  { key: 'SKIN_RCL_AGAIN', label: 'SKIN_RCL_AGAIN' },
 ];
 const QC_COLUMN_GROUPS = {
   'THÔNG TIN CHUNG': 'bg-indigo-50/90 text-indigo-900 border-indigo-100',
@@ -59,7 +61,6 @@ export default function DataPage() {
   const [sheet, setSheet] = useState(routeSheet);
   const [sheets, setSheets] = useState([]);
   const [columnHeaders, setColumnHeaders] = useState(null);
-  const [hasGroupedHeaders, setHasGroupedHeaders] = useState(false);
   const [headerRowsCount, setHeaderRowsCount] = useState(0);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -122,7 +123,6 @@ export default function DataPage() {
     setFilters({});
     setSortState(null);
     setColumnHeaders(null);
-    setHasGroupedHeaders(false);
     setHeaderRowsCount(0);
   }, [routeSheet]);
 
@@ -134,7 +134,6 @@ export default function DataPage() {
       setFilters({});
       setSortState(null);
       setColumnHeaders(null);
-      setHasGroupedHeaders(false);
       setHeaderRowsCount(0);
     }
   }, [requestedId, reportId, routeSheet]);
@@ -166,7 +165,6 @@ export default function DataPage() {
     setTotal(0);
     setQualitySummary(null);
     setColumnHeaders(null);
-    setHasGroupedHeaders(false);
     setHeaderRowsCount(0);
 
     if (!reportId) {
@@ -201,14 +199,13 @@ export default function DataPage() {
         const groupedHeaderRows = result.rows.filter(isQcColumnHeader);
         if (groupedHeaderRows.length > 0) {
           setColumnHeaders(groupedHeaderRows[0]?.values || null);
-          setHasGroupedHeaders(true);
           setHeaderRowsCount(groupedHeaderRows.length);
         }
         const dataRows = result.rows.filter((row) => !isQcColumnHeader(row));
         setRows(dataRows);
         nextOffsetRef.current = dataRows.length + (groupedHeaderRows.length || 0);
         setTotal(result.total);
-        setSheets(result.sheets);
+        setSheets(Array.isArray(result?.sheets) ? result.sheets : []);
       } catch (loadError) {
         if (!controller.signal.aborted && queryVersionRef.current === queryVersion) {
           setError(loadError.message);
@@ -271,7 +268,6 @@ export default function DataPage() {
       const groupedHeaderRows = result.rows.filter(isQcColumnHeader);
       if (groupedHeaderRows.length > 0) {
         setColumnHeaders(groupedHeaderRows[0]?.values || null);
-        setHasGroupedHeaders(true);
         setHeaderRowsCount(groupedHeaderRows.length);
       }
       const dataRows = result.rows.filter((row) => !isQcColumnHeader(row));
@@ -314,7 +310,7 @@ export default function DataPage() {
       setRows((currentRows) => [...currentRows, ...newRows]);
       nextOffsetRef.current += result.rows.length;
       setTotal(result.total);
-      setSheets(result.sheets);
+      setSheets(Array.isArray(result?.sheets) ? result.sheets : []);
     } catch (loadError) {
       if (queryVersionRef.current === queryVersion) setError(loadError.message);
     } finally {
@@ -453,7 +449,6 @@ export default function DataPage() {
     setFilters({});
     setSortState(null);
     setColumnHeaders(null);
-    setHasGroupedHeaders(false);
     setHeaderRowsCount(0);
   };
 
@@ -512,7 +507,7 @@ export default function DataPage() {
                 className="h-10 w-full"
               >
                 <option value="">{loadingReports ? 'Đang tải báo cáo…' : 'Chọn báo cáo'}</option>
-                {reports.map((report) => (
+                {(reports || []).map((report) => (
                   <option key={report.job_id} value={report.job_id}>{report.filename}</option>
                 ))}
               </Select>
@@ -526,7 +521,7 @@ export default function DataPage() {
                 className="h-10 w-full"
               >
                 <option value="">Tất cả sheet</option>
-                {sheets.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
+                {(sheets || []).map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
               </Select>
             </label>
             <label className="relative">
@@ -732,12 +727,7 @@ export default function DataPage() {
               <Table wrapperClassName="contents" className="w-full min-w-[640px] border-collapse text-left text-xs">
                 <thead className="sticky top-0 z-20 shadow-xs">
                   <tr>
-                    {!hasGroupedHeaders && (
-                      <th className="whitespace-nowrap px-3 py-3 border-b border-slate-200 bg-slate-100 font-bold text-slate-700">
-                        Sheet / dòng
-                      </th>
-                    )}
-                    {columns.map((column) => (
+                    {(columns || []).map((column) => (
                       <th
                         key={column}
                         className={`border-b border-r border-slate-200/80 min-w-36 whitespace-nowrap px-3 py-3 text-center align-middle font-bold ${
@@ -765,17 +755,12 @@ export default function DataPage() {
                 <tbody className="divide-y divide-slate-100">
                   {topSpacerHeight > 0 && (
                     <tr style={{ height: `${topSpacerHeight}px` }}>
-                      <td colSpan={columns.length + (hasGroupedHeaders ? 0 : 1)} className="p-0 border-0" />
+                      <td colSpan={columns?.length || 0} className="p-0 border-0" />
                     </tr>
                   )}
-                  {visibleRows.map((row) => (
-                    <tr key={row._id} className="transition-colors hover:bg-indigo-50/30">
-                      {!hasGroupedHeaders && (
-                        <td className="whitespace-nowrap px-3 py-3 font-medium text-slate-500 border-r border-slate-100">
-                          {row.sheetName} · {row.rowNumber}
-                        </td>
-                      )}
-                      {columns.map((column) => (
+                  {(visibleRows || []).map((row, idx) => (
+                    <tr key={row._id || row.id || idx} className="transition-colors hover:bg-indigo-50/30">
+                      {(columns || []).map((column) => (
                         <td key={column} className="max-w-64 px-3 py-2.5 text-slate-800 border-r border-slate-100">
                           <span className="block truncate" title={String(row.values?.[column] ?? '—')}>
                             {String(row.values?.[column] ?? '—')}
@@ -786,12 +771,12 @@ export default function DataPage() {
                   ))}
                   {bottomSpacerHeight > 0 && (
                     <tr style={{ height: `${bottomSpacerHeight}px` }}>
-                      <td colSpan={columns.length + (hasGroupedHeaders ? 0 : 1)} className="p-0 border-0" />
+                      <td colSpan={columns?.length || 0} className="p-0 border-0" />
                     </tr>
                   )}
                   {filteredRows.length === 0 && (
                     <tr>
-                      <td colSpan={columns.length + (hasGroupedHeaders ? 0 : 1)} className="px-4 py-12 text-center text-xs font-medium text-slate-500">
+                      <td colSpan={columns?.length || 0} className="px-4 py-12 text-center text-xs font-medium text-slate-500">
                         Không tìm thấy dòng phù hợp với bộ lọc đã chọn.
                       </td>
                     </tr>

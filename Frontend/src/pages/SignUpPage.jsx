@@ -62,7 +62,7 @@ const SignUpPage = () => {
             <FileSpreadsheet size={24} />
           </span>
           <div className="inline-flex items-center gap-1.5 self-start rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-200/70">
-            HRC2 QC System
+            Theo dõi đơn hàng
           </div>
           <CardTitle className="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">
             Tạo tài khoản

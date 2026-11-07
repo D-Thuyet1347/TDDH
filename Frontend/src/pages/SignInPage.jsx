@@ -81,7 +81,7 @@ const SignInPage = () => {
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white shadow-lg shadow-indigo-600/25">
               <FileSpreadsheet size={24} />
             </span>
-            <p className="mt-3 text-base font-bold text-slate-900">HRC2 QC System</p>
+            <p className="mt-3 text-base font-bold text-slate-900">Theo dõi đơn hàng</p>
           </div>
 
           <div className="mb-8">

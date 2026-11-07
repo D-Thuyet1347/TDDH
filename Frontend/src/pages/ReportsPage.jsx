@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Download, FileSpreadsheet, LoaderCircle, Search, TableProperties } from 'lucide-react';
-import { getReportFileUrl, getReports } from '../AllAPIs';
+import { AlertCircle, AlertTriangle, Download, FileSpreadsheet, LoaderCircle, Search, TableProperties, Trash2 } from 'lucide-react';
+import { getReportFileUrl, getReports, deleteAllQcReports, deleteQcReport } from '../AllAPIs';
 import QcLayout from '../components/QcLayout';
 import { Alert } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Table } from '../components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
+import { successToast, errorToast } from '../utils/toast';
 import { fileSize, nf, vnDateTime } from '../utils/ultils';
 
 const PAGE_SIZE = 20;
@@ -20,33 +22,71 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Delete states
+  const [openDeleteAll, setOpenDeleteAll] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [reportToDelete, setReportToDelete] = useState(null);
+  const [deletingSingle, setDeletingSingle] = useState(false);
+
+  const loadReports = useCallback(async (signal) => {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await getReports({
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+        search,
+        signal,
+      });
+      setReports(result.reports);
+      setTotal(result.total);
+    } catch (loadError) {
+      if (!signal?.aborted) setError(loadError.message);
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
+  }, [page, search]);
+
   useEffect(() => {
     const controller = new AbortController();
-    const loadReports = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const result = await getReports({
-          limit: PAGE_SIZE,
-          offset: page * PAGE_SIZE,
-          search,
-          signal: controller.signal,
-        });
-        setReports(result.reports);
-        setTotal(result.total);
-      } catch (loadError) {
-        if (!controller.signal.aborted) setError(loadError.message);
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
-    };
-    loadReports();
+    loadReports(controller.signal);
     return () => controller.abort();
-  }, [page, search]);
+  }, [loadReports]);
 
   const changeSearch = (event) => {
     setSearch(event.target.value);
     setPage(0);
+  };
+
+  const handleDeleteAll = async () => {
+    setDeletingAll(true);
+    try {
+      const res = await deleteAllQcReports();
+      successToast(res?.message || 'Đã xóa toàn bộ dữ liệu kho báo cáo thành công.');
+      setOpenDeleteAll(false);
+      setReports([]);
+      setTotal(0);
+      setPage(0);
+    } catch (err) {
+      errorToast(err.message || 'Không thể xóa dữ liệu kho báo cáo.');
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
+  const handleDeleteSingle = async () => {
+    if (!reportToDelete) return;
+    setDeletingSingle(true);
+    try {
+      const res = await deleteQcReport(reportToDelete.job_id);
+      successToast(res?.message || `Đã xóa báo cáo ${reportToDelete.filename}.`);
+      setReportToDelete(null);
+      loadReports();
+    } catch (err) {
+      errorToast(err.message || 'Không thể xóa báo cáo.');
+    } finally {
+      setDeletingSingle(false);
+    }
   };
 
   return (
@@ -61,14 +101,27 @@ export default function ReportsPage() {
               Kho báo cáo
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              {nf(total)} báo cáo QC đã được lập chỉ mục và lưu an toàn trong MongoDB Atlas.
+              {nf(total)} báo cáo QC đã được lập chỉ mục và lưu trữ an toàn.
             </p>
           </div>
-          <Button asChild className="h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 shadow-md shadow-indigo-600/20 hover:from-indigo-500 hover:to-blue-500">
-            <Link to="/export">
-              <FileSpreadsheet size={16} /> Tải báo cáo mới
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {total > 0 && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => setOpenDeleteAll(true)}
+                disabled={deletingAll || loading}
+                className="h-10 rounded-xl bg-rose-600 text-white shadow-md shadow-rose-600/20 hover:bg-rose-700"
+              >
+                <Trash2 size={16} /> Xóa toàn bộ dữ liệu
+              </Button>
+            )}
+            <Button asChild className="h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 shadow-md shadow-indigo-600/20 hover:from-indigo-500 hover:to-blue-500">
+              <Link to="/export">
+                <FileSpreadsheet size={16} /> Tải báo cáo mới
+              </Link>
+            </Button>
+          </div>
         </header>
 
         <Card className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-card">
@@ -103,7 +156,7 @@ export default function ReportsPage() {
             <div className="px-6 py-16 text-center">
               <FileSpreadsheet size={32} className="mx-auto mb-3 text-slate-300" />
               <p className="text-sm font-medium text-slate-600">
-                {search ? 'Không tìm thấy báo cáo phù hợp.' : 'Chưa có báo cáo. Hãy tải file Excel đầu tiên.'}
+                {search ? 'Không tìm thấy báo cáo phù hợp.' : 'Chưa có báo cáo nào trong kho lưu trữ.'}
               </p>
             </div>
           ) : (
@@ -161,6 +214,14 @@ export default function ReportsPage() {
                           >
                             <Download size={14} /> Tải file
                           </a>
+                          <button
+                            type="button"
+                            onClick={() => setReportToDelete(report)}
+                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-rose-500 transition hover:bg-rose-50 hover:text-rose-700"
+                            title="Xóa báo cáo này"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -200,6 +261,104 @@ export default function ReportsPage() {
             </div>
           )}
         </Card>
+
+        {/* Modal xác nhận xóa toàn bộ dữ liệu */}
+        <Dialog open={openDeleteAll} onOpenChange={setOpenDeleteAll}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+                <AlertTriangle size={24} />
+              </div>
+              <DialogTitle className="text-center text-lg font-bold text-slate-900">
+                Xác nhận xóa toàn bộ kho báo cáo?
+              </DialogTitle>
+            </DialogHeader>
+            <div className="text-center text-xs text-slate-600 space-y-2 py-2">
+              <p>
+                Hành động này sẽ xóa vĩnh viễn <strong className="text-rose-600">{nf(total)} báo cáo QC</strong> và <strong className="text-rose-600">toàn bộ dòng dữ liệu</strong> liên quan khỏi cơ sở dữ liệu.
+              </p>
+              <p className="font-semibold text-slate-700">
+                Thao tác này không thể hoàn tác! Bạn có chắc chắn muốn xóa?
+              </p>
+            </div>
+            <DialogFooter className="mt-4 flex gap-2 sm:justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={deletingAll}
+                onClick={() => setOpenDeleteAll(false)}
+                className="rounded-xl"
+              >
+                Hủy bỏ
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={deletingAll}
+                onClick={handleDeleteAll}
+                className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white"
+              >
+                {deletingAll ? (
+                  <>
+                    <LoaderCircle size={16} className="animate-spin mr-1.5" /> Đang xóa…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={16} className="mr-1.5" /> Xác nhận xóa tất cả
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal xác nhận xóa 1 báo cáo */}
+        <Dialog open={Boolean(reportToDelete)} onOpenChange={(open) => !open && setReportToDelete(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+                <Trash2 size={24} />
+              </div>
+              <DialogTitle className="text-center text-lg font-bold text-slate-900">
+                Xác nhận xóa báo cáo?
+              </DialogTitle>
+            </DialogHeader>
+            <div className="text-center text-xs text-slate-600 space-y-1 py-2">
+              <p>
+                Bạn có chắc chắn muốn xóa báo cáo <strong className="text-slate-900">{reportToDelete?.filename}</strong>?
+              </p>
+              <p className="text-slate-500">
+                Gồm {nf(reportToDelete?.rows_imported || 0)} dòng dữ liệu. Thao tác này không thể hoàn tác.
+              </p>
+            </div>
+            <DialogFooter className="mt-4 flex gap-2 sm:justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={deletingSingle}
+                onClick={() => setReportToDelete(null)}
+                className="rounded-xl"
+              >
+                Hủy bỏ
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={deletingSingle}
+                onClick={handleDeleteSingle}
+                className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white"
+              >
+                {deletingSingle ? (
+                  <>
+                    <LoaderCircle size={16} className="animate-spin mr-1.5" /> Đang xóa…
+                  </>
+                ) : (
+                  'Xác nhận xóa'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </QcLayout>
   );

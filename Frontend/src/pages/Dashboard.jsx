@@ -150,16 +150,17 @@ function ReportTable({ reports, loading, error, search }) {
   );
 }
 
-function JobList({ jobs, loading }) {
-  if (loading && !jobs.length) {
+function JobList({ jobs = [], loading }) {
+  const safeJobs = Array.isArray(jobs) ? jobs : (Array.isArray(jobs?.jobs) ? jobs.jobs : []);
+  if (loading && !safeJobs.length) {
     return <div className="flex items-center justify-center gap-2 px-6 py-10 text-[12px] text-slate-500"><LoaderCircle size={16} className="animate-spin text-indigo-600" /> Đang tải tác vụ…</div>;
   }
-  if (!jobs.length) {
+  if (!safeJobs.length) {
     return <p className="px-6 py-9 text-center text-[12px] font-medium text-slate-400">Chưa có tác vụ xuất Excel.</p>;
   }
   return (
     <div className="divide-y divide-slate-100">
-      {jobs.slice(0, 5).map(job => (
+      {safeJobs.slice(0, 5).map(job => (
         <div className="flex items-center justify-between gap-3 px-5 py-3.5 transition-colors hover:bg-slate-50/60 sm:px-6" key={job.job_id}>
           <div className="min-w-0">
             <p className="truncate text-[12px] font-semibold text-slate-800" title={job.filename || job.job_id}>
@@ -206,8 +207,12 @@ export default function Dashboard() {
       else nextErrors.summary = summaryResult.reason?.message || 'Không tải được thống kê';
       if (reportsResult.status === 'fulfilled') setReports(reportsResult.value.reports || []);
       else nextErrors.reports = reportsResult.reason?.message || 'Không tải được báo cáo';
-      if (jobsResult.status === 'fulfilled') setJobs(jobsResult.value || []);
-      else nextErrors.jobs = jobsResult.reason?.message || 'Không tải được tác vụ';
+      if (jobsResult.status === 'fulfilled') {
+        const val = jobsResult.value;
+        setJobs(Array.isArray(val) ? val : (Array.isArray(val?.jobs) ? val.jobs : []));
+      } else {
+        nextErrors.jobs = jobsResult.reason?.message || 'Không tải được tác vụ';
+      }
       if (healthResult.status === 'fulfilled') setHealth(healthResult.value);
       else { setHealth(null); nextErrors.mongo = healthResult.reason?.message || 'Không kiểm tra được MongoDB'; }
       setErrors(nextErrors);
@@ -219,10 +224,11 @@ export default function Dashboard() {
     return () => controller.abort();
   }, [revision]);
 
-  const activeJobs = useMemo(() => jobs.filter(job => ACTIVE_STATUSES.has(job.status)).length, [jobs]);
-  const completedJobs = useMemo(() => jobs.filter(job => COMPLETE_STATUSES.has(job.status)).length, [jobs]);
-  const failedJobs = useMemo(() => jobs.filter(job => FAILURE_STATUSES.has(job.status)).length, [jobs]);
-  const sampleTotal = jobs.length;
+  const jobList = useMemo(() => (Array.isArray(jobs) ? jobs : (Array.isArray(jobs?.jobs) ? jobs.jobs : [])), [jobs]);
+  const activeJobs = useMemo(() => jobList.filter(job => ACTIVE_STATUSES.has(job?.status)).length, [jobList]);
+  const completedJobs = useMemo(() => jobList.filter(job => COMPLETE_STATUSES.has(job?.status)).length, [jobList]);
+  const failedJobs = useMemo(() => jobList.filter(job => FAILURE_STATUSES.has(job?.status)).length, [jobList]);
+  const sampleTotal = jobList.length;
   const completePercent = sampleTotal ? Math.round((completedJobs / sampleTotal) * 100) : 0;
   const activePercent = sampleTotal ? Math.round((activeJobs / sampleTotal) * 100) : 0;
   const failedPercent = sampleTotal ? Math.round((failedJobs / sampleTotal) * 100) : 0;

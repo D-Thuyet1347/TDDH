@@ -38,6 +38,12 @@ const NUMBER_COLUMNS = new Set([
   'ket_qua_can',
 ]);
 
+const normalizeText = (str) =>
+  String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
 const formatFilterLabel = (val, colKey) => {
   if (!val && val !== 0) return '(Trống)';
   const key = String(colKey || '').toLowerCase();
@@ -139,11 +145,15 @@ export default function ExcelFilterDropdown({
   // All valid keys in this column
   const allKeys = useMemo(() => distinctValues.map((item) => item.key), [distinctValues]);
 
-  // Filter distinct values by search keyword
+  // Filter distinct values by search keyword (supporting accent-insensitive Vietnamese matching)
   const filteredValues = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return distinctValues;
-    return distinctValues.filter((item) => item.label.toLowerCase().includes(q));
+    const qNorm = normalizeText(q);
+    return distinctValues.filter((item) => {
+      const labelLower = item.label.toLowerCase();
+      return labelLower.includes(q) || normalizeText(labelLower).includes(qNorm);
+    });
   }, [distinctValues, searchQuery]);
 
   // When dropdown opens, initialize selectedValues from activeFilter
@@ -299,7 +309,7 @@ export default function ExcelFilterDropdown({
         <div
           ref={dropdownRef}
           onClick={(e) => e.stopPropagation()}
-          className={`absolute top-full z-50 mt-1.5 w-72 rounded-2xl border border-slate-200/90 bg-white p-3 font-sans text-left text-xs text-slate-800 shadow-[0_12px_40px_rgba(15,23,42,0.18)] ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-100 ${
+          className={`absolute top-full z-50 mt-1.5 w-80 max-w-[92vw] rounded-2xl border border-slate-200/90 bg-white p-3 font-sans text-left text-xs text-slate-800 shadow-[0_12px_40px_rgba(15,23,42,0.18)] ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-100 ${
             align === 'right' ? 'right-0' : align === 'left' ? 'left-0' : 'left-1/2 -translate-x-1/2'
           }`}
         >
@@ -393,7 +403,7 @@ export default function ExcelFilterDropdown({
           </div>
 
           {/* Values Checkbox List */}
-          <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/40 p-1.5 space-y-0.5">
+          <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/40 p-1.5 space-y-0.5">
             {/* Select All Row */}
             {filteredValues.length > 0 && (
               <label
