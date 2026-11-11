@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { registerUser } from "../APIs/userApi";
+import { registerUser } from "../APIs";
 import { CheckCircle2, Eye, EyeOff, FileSpreadsheet } from "lucide-react";
 import { errorToast, successToast } from "../utils/toast";
 import { Button } from "../components/ui/button";

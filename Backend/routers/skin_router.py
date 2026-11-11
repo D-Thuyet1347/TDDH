@@ -28,9 +28,26 @@ from services.skin_service import (
     generate_get_data_rows,
     export_get_data_excel,
     fetch_and_update_ghc_for_data_source,
+    collect_get_data_po,
+    recalculate_get_data_po,
+    sync_all_demand_to_get_data_po,
+    get_pivot_data,
+    save_pivot_block,
+    import_hang_vot_rows,
+    import_hang_vot_excel,
+    sync_hang_vot_data,
+    generate_skin_ke_hoach,
+    get_skin_ke_hoach_matrix,
+    export_skin_ke_hoach_excel,
+    get_skin_hrc2_coils_by_ke_hoach,
+    assign_skin_hrc2_ke_hoach_batch,
     SHEET_REGISTRY,
     SKIN_HRC2_COLUMNS,
     DATA_SOURCE_COLUMNS,
+    GET_DATA_PO_COLUMNS,
+    PIVOT_TABLE_COLUMNS,
+    HANG_VOT_COLUMNS,
+    KE_HOACH_COLUMNS,
 )
 
 router = APIRouter()
@@ -68,6 +85,20 @@ class FetchGhcRequest(BaseModel):
     row_ids: list[str] | None = None
     only_missing: bool = True
 
+class CollectGetDataPoRequest(BaseModel):
+    po_list: list[str] = []
+    po_type: str = "skin"
+    clear_first: bool = False
+
+class SavePivotBlockRequest(BaseModel):
+    block_type: str
+    items: list[dict[str, Any]] = []
+    clear_first: bool = False
+
+class ImportHangVotRequest(BaseModel):
+    rows: list[dict[str, Any]] = []
+    clear_first: bool = False
+
 def validate_sheet(sheet_name: str) -> str:
     key = normalize_sheet_key(sheet_name)
     if key not in SHEET_REGISTRY:
@@ -89,7 +120,7 @@ async def get_rows_endpoint(
     sheet_name: str,
     limit: int = Query(100000, ge=1, le=500000),
     offset: int = Query(0, ge=0),
-    search: str = Query("", max_length=200),
+    search: str = Query("", max_length=50000),
 ):
     try:
         sheet_key = validate_sheet(sheet_name)
@@ -279,10 +310,15 @@ async def undo_sheet_action_endpoint(sheet_name: str):
 async def recalculate_sheet_endpoint(sheet_name: str):
     try:
         sheet_key = validate_sheet(sheet_name)
-        if sheet_key == "skin_hrc2":
+        sheet_key_upper = sheet_key.upper()
+        if sheet_key_upper == "SKIN_HRC2":
             res = recalculate_skin_hrc2()
-        elif sheet_key in ("po_hsm", "po_skin"):
-            res = recalculate_po_sheet(sheet_key)
+        elif sheet_key_upper in ("PO_HSM", "PO_SKIN"):
+            res = recalculate_po_sheet(sheet_key_upper)
+        elif sheet_key_upper == "GET_DATA_PO":
+            res = recalculate_get_data_po()
+        elif sheet_key_upper == "PIVOT_TABLE":
+            res = recalculate_skin_hrc2()
         else:
             return {"success": True, "message": f"Sheet {sheet_name} không có công thức phụ thuộc cần tính toán lại."}
         return res
@@ -333,4 +369,148 @@ async def fetch_ghc_endpoint(req: FetchGhcRequest | None = None):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/get-data-po/collect")
+async def collect_get_data_po_endpoint(req: CollectGetDataPoRequest):
+    try:
+        res = collect_get_data_po(po_list=req.po_list, po_type=req.po_type, clear_first=req.clear_first)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/get-data-po/recalculate")
+async def recalculate_get_data_po_endpoint():
+    try:
+        res = recalculate_get_data_po()
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class SyncDemandRequest(BaseModel):
+    clear_first: bool = True
+
+@router.post("/get-data-po/sync-demand")
+async def sync_demand_endpoint(req: SyncDemandRequest = None):
+    try:
+        clear = req.clear_first if req else True
+        res = sync_all_demand_to_get_data_po(clear_first=clear)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/pivot/data")
+async def get_pivot_data_endpoint():
+    try:
+        res = get_pivot_data()
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/pivot/save-block")
+async def save_pivot_block_endpoint(req: SavePivotBlockRequest):
+    try:
+        res = save_pivot_block(block_type=req.block_type, items=req.items, clear_first=req.clear_first)
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/hang-vot/import-rows")
+async def import_hang_vot_rows_endpoint(req: ImportHangVotRequest):
+    try:
+        res = import_hang_vot_rows(rows_data=req.rows, clear_first=req.clear_first)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/hang-vot/upload-excel")
+async def upload_hang_vot_excel_endpoint(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        res = import_hang_vot_excel(buffer=contents, original_name=file.filename or "upload.xlsx")
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class SyncHangVotRequest(BaseModel):
+    custom_path: str | None = None
+
+@router.post("/hang-vot/sync")
+async def sync_hang_vot_endpoint(req: SyncHangVotRequest | None = None):
+    try:
+        custom_p = req.custom_path if req else None
+        res = sync_hang_vot_data(custom_path=custom_p)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class GenerateKeHoachRequest(BaseModel):
+    skin2_target: int = 50
+    skin4_target: int = 50
+    update_source: bool = True
+    today_date: str | None = None
+
+@router.post("/ke-hoach/generate")
+async def generate_ke_hoach_endpoint(req: GenerateKeHoachRequest | None = None):
+    try:
+        s2 = req.skin2_target if req else 50
+        s4 = req.skin4_target if req else 50
+        upd = req.update_source if req else True
+        td = req.today_date if req else None
+        res = generate_skin_ke_hoach(skin2_target=s2, skin4_target=s4, update_source=upd, today_date_str=td)
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/ke-hoach/matrix")
+async def get_ke_hoach_matrix_endpoint():
+    try:
+        res = get_skin_ke_hoach_matrix()
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/ke-hoach/export")
+async def export_ke_hoach_endpoint(skin2_target: int = 50, skin4_target: int = 50):
+    try:
+        buf = export_skin_ke_hoach_excel(skin2_target=skin2_target, skin4_target=skin4_target)
+        headers = {
+            "Content-Disposition": 'attachment; filename="Ke_hoach_Skin.xlsx"'
+        }
+        return Response(content=buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AssignKeHoachBatchRequest(BaseModel):
+    coil_ids: list[str]
+    ke_hoach: str = ""
+    limit: int = 1000
+
+
+@router.get("/hrc2/ke-hoach-coils")
+async def get_hrc2_ke_hoach_coils_endpoint(date: str = Query("", alias="date"), limit: int = Query(1000, le=5000)):
+    try:
+        res = get_skin_hrc2_coils_by_ke_hoach(ke_hoach_query=date, limit=limit)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hrc2/ke-hoach-assign")
+async def assign_hrc2_ke_hoach_batch_endpoint(req: AssignKeHoachBatchRequest):
+    try:
+        res = assign_skin_hrc2_ke_hoach_batch(coil_ids=req.coil_ids, ke_hoach_val=req.ke_hoach, limit=req.limit)
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
 

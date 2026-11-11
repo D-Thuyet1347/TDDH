@@ -15,8 +15,11 @@ def list_order_demand_reports(limit: int = 100, offset: int = 0, search: str = "
     where = "WHERE 1=1"
     params = []
     if search:
-        where += " AND filename LIKE ?"
-        params.append(f"%{search}%")
+        tokens = [t.strip() for t in re.split(r'[\s,;]+', search) if t.strip()]
+        if tokens:
+            token_clauses = ["filename LIKE ?" for _ in tokens]
+            where += f" AND ({' OR '.join(token_clauses)})"
+            params.extend([f"%{t}%" for t in tokens])
 
     count_row = query_one(f"SELECT count(*) as cnt FROM nc_reports {where}", tuple(params))
     total = count_row["cnt"] if count_row else 0
@@ -53,8 +56,13 @@ def get_order_demand_rows(report_id: str, sheet_name: str | None = None, limit: 
         params.append(sheet_name)
 
     if search:
-        where_clauses.append("(order_id LIKE ? OR values_json LIKE ?)")
-        params.extend([f"%{search}%", f"%{search}%"])
+        tokens = [t.strip() for t in re.split(r'[\s,;]+', search) if t.strip()]
+        if tokens:
+            token_clauses = []
+            for t in tokens:
+                token_clauses.append("(order_id LIKE ? OR values_json LIKE ?)")
+                params.extend([f"%{t}%", f"%{t}%"])
+            where_clauses.append(f"({' OR '.join(token_clauses)})")
 
     where_str = " AND ".join(where_clauses)
     count_row = query_one(f"SELECT count(*) as cnt FROM nc_rows WHERE {where_str}", tuple(params))

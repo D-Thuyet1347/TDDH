@@ -231,8 +231,11 @@ async def list_reports(limit: int = 20, offset: int = 0, search: str = ""):
     where = "WHERE report_type != 'order-demand'"
     params = []
     if search:
-        where += " AND filename LIKE ?"
-        params.append(f"%{search}%")
+        tokens = [t.strip() for t in re.split(r'[\s,;]+', search) if t.strip()]
+        if tokens:
+            token_clauses = ["filename LIKE ?" for _ in tokens]
+            where += f" AND ({' OR '.join(token_clauses)})"
+            params.extend([f"%{t}%" for t in tokens])
 
     count_row = query_one(f"SELECT count(*) as cnt FROM qcreports {where}", tuple(params))
     total = count_row["cnt"] if count_row else 0

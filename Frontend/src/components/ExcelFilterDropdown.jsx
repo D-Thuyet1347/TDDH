@@ -85,8 +85,10 @@ export default function ExcelFilterDropdown({
   const dropdownRef = useRef(null);
   const buttonRef = useRef(null);
 
-  // 1. Calculate all distinct values and counts for this column
+  // 1. Calculate all distinct values and counts for this column (Lazy: only when open)
   const distinctValues = useMemo(() => {
+    if (!isOpen) return [];
+
     // Ưu tiên: Lấy toàn bộ giá trị có trong toàn bộ bảng từ allColumnValues
     if (allColumnValues && (allColumnValues.counts || typeof allColumnValues.blanks === 'number')) {
       const countsMap = allColumnValues.counts || {};
@@ -139,19 +141,23 @@ export default function ExcelFilterDropdown({
       list.push({ key: val, label: formatFilterLabel(val, columnKey), count });
     }
     return list;
-  }, [allColumnValues, rows, columnKey]);
+  }, [isOpen, allColumnValues, rows, columnKey]);
 
   // All valid keys in this column
   const allKeys = useMemo(() => distinctValues.map((item) => item.key), [distinctValues]);
 
-  // Filter distinct values by search keyword (supporting accent-insensitive Vietnamese matching)
+  // Filter distinct values by search keyword (supporting multi-term search & accent-insensitive Vietnamese matching)
   const filteredValues = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return distinctValues;
-    const qNorm = normalizeText(q);
+    const tokens = q.split(/[\s,;]+/).filter(Boolean);
+    if (!tokens.length) return distinctValues;
+    const tokenNorms = tokens.map((t) => normalizeText(t));
+
     return distinctValues.filter((item) => {
       const labelLower = item.label.toLowerCase();
-      return labelLower.includes(q) || normalizeText(labelLower).includes(qNorm);
+      const labelNorm = normalizeText(labelLower);
+      return tokens.some((token, idx) => labelLower.includes(token) || labelNorm.includes(tokenNorms[idx]));
     });
   }, [distinctValues, searchQuery]);
 

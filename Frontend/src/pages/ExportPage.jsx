@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  AlertCircle, Archive, CheckCircle2, Download, FileSpreadsheet, LoaderCircle,
+  AlertCircle, Archive, CheckCircle2, Clock, Download, FileSpreadsheet, LoaderCircle,
   MonitorDown, Power, PowerOff, Upload,
 } from 'lucide-react';
 import {
@@ -16,7 +16,7 @@ import {
   uploadOrderDemandReport,
   startQcExport,
   uploadReport,
-} from '../AllAPIs';
+} from '../APIs';
 import QcLayout from '../components/QcLayout';
 import { Alert } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
@@ -52,11 +52,11 @@ const toLocalDateTimeValue = (value) => {
 
 const getDefaultExportDateRange = () => {
   const now = new Date();
+  const yesterday8AM = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 8, 0, 0);
   const today8AM = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0);
-  const tomorrow8AM = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 8, 0, 0);
   return {
-    fromDate: toLocalDateTimeValue(today8AM),
-    toDate: toLocalDateTimeValue(tomorrow8AM),
+    fromDate: toLocalDateTimeValue(yesterday8AM),
+    toDate: toLocalDateTimeValue(today8AM),
   };
 };
 
@@ -212,6 +212,7 @@ export default function ExportPage() {
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   const [includeAggregate, setIncludeAggregate] = useState(true);
+  const [exportTime, setExportTime] = useState('08:00');
   const [isCustomRange, setIsCustomRange] = useState(false);
   const [fromDate, setFromDate] = useState(() => getDefaultExportDateRange().fromDate);
   const [toDate, setToDate] = useState(() => getDefaultExportDateRange().toDate);
@@ -303,12 +304,17 @@ export default function ExportPage() {
   const handleYearChange = (newYear) => {
     setYear(newYear);
     if (!isCustomRange && selectedMonths.length) {
+      const now = new Date();
       const minM = Math.min(...selectedMonths);
       const maxM = Math.max(...selectedMonths);
       const nextMaxM = maxM === 12 ? 1 : maxM + 1;
       const nextMaxY = maxM === 12 ? newYear + 1 : newYear;
-      const start = new Date(newYear, minM - 1, 1, 8, 0, 0);
-      const end = new Date(nextMaxY, nextMaxM - 1, 1, 8, 0, 0);
+      const [h, min] = (exportTime || '08:00').split(':').map(Number);
+      const start = new Date(newYear, minM - 1, 1, h || 8, min || 0, 0);
+      const isCurrentMonthMax = newYear === now.getFullYear() && maxM === now.getMonth() + 1;
+      const end = isCurrentMonthMax
+        ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), h || 8, min || 0, 0)
+        : new Date(nextMaxY, nextMaxM - 1, 1, h || 8, min || 0, 0);
       setFromDate(toLocalDateTimeValue(start));
       setToDate(toLocalDateTimeValue(end));
     }
@@ -365,6 +371,7 @@ export default function ExportPage() {
           } else if (schedule?.month === 'custom') {
             setIsCustomRange(true);
           }
+          if (schedule?.export_time) setExportTime(schedule.export_time);
           if (schedule?.year) setYear(schedule.year);
           if (schedule?.from_date) setFromDate(schedule.from_date);
           if (schedule?.to_date) setToDate(schedule.to_date);
@@ -522,6 +529,7 @@ export default function ExportPage() {
           months: selectedMonths,
           includeAggregate,
           isCustomRange,
+          exportTime,
           fromDate,
           toDate,
           coilIds,
@@ -719,16 +727,97 @@ export default function ExportPage() {
                           </div>
                         </div>
 
+                        {/* Cài đặt giờ lấy dữ liệu cho các file tháng */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-gradient-to-r from-indigo-50/80 via-white to-indigo-50/60 border border-indigo-200/80 rounded-2xl shadow-2xs">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
+                              <Clock size={18} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-800">
+                                  Khung giờ lấy dữ liệu mỗi tháng:
+                                </span>
+                                <span className="inline-flex items-center rounded-md bg-indigo-100 px-2 py-0.5 font-mono text-xs font-extrabold text-indigo-800">
+                                  {exportTime}
+                                </span>
+                              </div>
+                              <p className="mt-0.5 text-[11px] text-slate-500 font-normal">
+                                Các tháng trước: từ <strong>01 tháng này ({exportTime})</strong> đến <strong>01 tháng sau ({exportTime})</strong>. Tháng hiện tại: từ <strong>01.{String(new Date().getMonth() + 1).padStart(2, '0')} ({exportTime})</strong> đến <strong>hôm nay ({String(new Date().getDate()).padStart(2, '0')}.{String(new Date().getMonth() + 1).padStart(2, '0')}) lúc {exportTime}</strong>.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Input
+                              type="time"
+                              value={exportTime}
+                              onChange={(e) => setExportTime(e.target.value || '08:00')}
+                              disabled={autoSchedule?.enabled}
+                              className="h-9 w-28 text-xs font-mono font-bold text-indigo-700 bg-white border-indigo-200 focus:border-indigo-500 rounded-xl"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setExportTime('08:00')}
+                              disabled={autoSchedule?.enabled}
+                              className={`h-9 px-2.5 text-xs font-bold rounded-xl transition-all ${
+                                exportTime === '08:00'
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                  : 'text-indigo-700 border-indigo-200 hover:bg-indigo-50 bg-white'
+                              }`}
+                            >
+                              08:00 AM (Chuẩn ca QC)
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setExportTime('07:00')}
+                              disabled={autoSchedule?.enabled}
+                              className={`h-9 px-2.5 text-xs font-semibold rounded-xl transition-all ${
+                                exportTime === '07:00'
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                  : 'text-slate-600 border-slate-200 hover:bg-slate-50 bg-white'
+                              }`}
+                            >
+                              07:00 AM
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setExportTime('00:00')}
+                              disabled={autoSchedule?.enabled}
+                              className={`h-9 px-2.5 text-xs font-semibold rounded-xl transition-all ${
+                                exportTime === '00:00'
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                  : 'text-slate-600 border-slate-200 hover:bg-slate-50 bg-white'
+                              }`}
+                            >
+                              00:00
+                            </Button>
+                          </div>
+                        </div>
+
                         {/* Danh sách 12 file tháng */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => {
                             const isChecked = selectedMonths.includes(m);
+                            const nowDate = new Date();
+                            const isCurrent = year === nowDate.getFullYear() && m === nowDate.getMonth() + 1;
+                            const todayDay = nowDate.getDate();
+                            const nextM = m === 12 ? 1 : m + 1;
+                            const nextY = m === 12 ? year + 1 : year;
                             return (
                               <label
                                 key={m}
                                 className={`flex items-center gap-2.5 rounded-xl border p-2.5 text-xs cursor-pointer select-none transition-all ${
                                   isChecked
-                                    ? 'border-indigo-400 bg-indigo-50/80 font-bold text-indigo-950 shadow-2xs ring-1 ring-indigo-400/30'
+                                    ? isCurrent
+                                      ? 'border-amber-400 bg-amber-50/80 font-bold text-amber-950 shadow-2xs ring-1 ring-amber-400/30'
+                                      : 'border-indigo-400 bg-indigo-50/80 font-bold text-indigo-950 shadow-2xs ring-1 ring-indigo-400/30'
                                     : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-slate-50/80'
                                 } ${autoSchedule?.enabled ? 'cursor-not-allowed opacity-60' : ''}`}
                               >
@@ -739,8 +828,23 @@ export default function ExportPage() {
                                   className="shrink-0"
                                 />
                                 <div className="min-w-0 flex-1">
-                                  <span className="block truncate">Tháng {m}</span>
-                                  <span className="block text-[10px] text-slate-400 font-normal">Thang_{m}.xlsx</span>
+                                  <div className="flex items-center justify-between">
+                                    <span className="block truncate font-bold">
+                                      Tháng {m}
+                                      {isCurrent && (
+                                        <span className="text-[10px] font-extrabold text-amber-800 bg-amber-200/90 px-1.5 py-0.2 rounded ml-1.5">
+                                          Hiện tại
+                                        </span>
+                                      )}
+                                    </span>
+                                    <span className="block text-[10px] text-slate-400 font-normal">Thang_{m}.xlsx</span>
+                                  </div>
+                                  <span className={`block text-[10px] font-mono mt-0.5 ${isCurrent ? 'text-amber-800 font-bold' : 'text-indigo-600 font-medium'}`}>
+                                    {isCurrent
+                                      ? `01.${String(m).padStart(2, '0')} → ${String(todayDay).padStart(2, '0')}.${String(m).padStart(2, '0')} (${exportTime})`
+                                      : `01.${String(m).padStart(2, '0')} → 01.${String(nextM).padStart(2, '0')}${m === 12 ? `.${nextY}` : ''} (${exportTime})`
+                                    }
+                                  </span>
                                 </div>
                               </label>
                             );
@@ -804,11 +908,11 @@ export default function ExportPage() {
                               }}
                               className="h-7 px-2.5 text-[11px] font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50"
                             >
-                              Đặt lại: 8:00 AM hôm nay → 8:00 AM hôm sau
+                              Đặt lại: 8:00 AM hôm qua → 8:00 AM hôm nay
                             </Button>
                           </div>
                           <p className="text-slate-500 mb-3 leading-relaxed">
-                            Mặc định thiết lập từ <strong>8:00 AM hôm nay</strong> đến <strong>8:00 AM hôm sau</strong> (chuẩn website QC <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] text-indigo-700">mm/dd/yyyy hh:ss</code>) và xuất ra file <strong>Tong_Hop_QC_HRC2.xlsx</strong>.
+                            Mặc định thiết lập từ <strong>8:00 AM hôm qua</strong> đến <strong>8:00 AM hôm nay</strong> (chuẩn ca làm việc 24h QC đã hoàn thành <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] text-indigo-700">mm/dd/yyyy hh:ss</code>) và xuất ra file <strong>Tong_Hop_QC_HRC2.xlsx</strong>.
                           </p>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <label>

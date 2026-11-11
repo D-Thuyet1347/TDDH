@@ -11,6 +11,8 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 
 from config.settings import (
+    APP_DIR,
+    BASE_DIR,
     QC_SITE_URL,
     QC_USERNAME,
     QC_PASSWORD,
@@ -139,6 +141,7 @@ def public_job(job: dict) -> dict:
         "selected_months": job.get("selectedMonths"),
         "include_aggregate": job.get("includeAggregate", True),
         "is_custom_range": bool(job.get("isCustomRange")),
+        "export_time": job.get("exportTime", "08:00:00"),
         "from_date": job.get("fromDate"),
         "to_date": job.get("toDate"),
         "coil_ids": job.get("coilIds"),
@@ -243,20 +246,37 @@ def validate_qc_export_input(data: dict) -> dict:
     if month == "custom":
         if not from_date or not to_date:
             now = datetime.now()
-            today_str = now.strftime("%m/%d/%Y 08:00:00")
             from datetime import timedelta
-            tom = now + timedelta(days=1)
-            from_date = from_date or today_str
-            to_date = to_date or tom.strftime("%m/%d/%Y 08:00:00")
+            yesterday_str = (now - timedelta(days=1)).strftime("%m/%d/%Y 08:00:00")
+            today_str = now.strftime("%m/%d/%Y 08:00:00")
+            from_date = from_date or yesterday_str
+            to_date = to_date or today_str
         from_date = format_to_qc_search_date(from_date, False)
         to_date = format_to_qc_search_date(to_date, True)
     else:
+        export_time = str(data.get("exportTime") or data.get("exportTimeFrom") or "08:00").strip()
+        if len(export_time.split(":")) == 2:
+            export_time = f"{export_time}:00"
+        
+        now = datetime.now()
+        curr_y = now.year
+        curr_m = now.month
+        curr_d = now.day
+
         min_m = min(selected_months)
         max_m = max(selected_months)
         next_max_m = 1 if max_m == 12 else max_m + 1
         next_max_y = year + 1 if max_m == 12 else year
-        from_date = f"{str(min_m).zfill(2)}/01/{year} 08:00:00"
-        to_date = f"{str(next_max_m).zfill(2)}/01/{next_max_y} 08:00:00"
+
+        from_date = f"{str(min_m).zfill(2)}/01/{year} {export_time}"
+        if year == curr_y and max_m == curr_m:
+            to_date = f"{str(curr_m).zfill(2)}/{str(curr_d).zfill(2)}/{year} {export_time}"
+        else:
+            to_date = f"{str(next_max_m).zfill(2)}/01/{next_max_y} {export_time}"
+
+    export_time_final = str(data.get("exportTime") or data.get("exportTimeFrom") or "08:00").strip()
+    if len(export_time_final.split(":")) == 2:
+        export_time_final = f"{export_time_final}:00"
 
     return {
         "factory": factory,
@@ -266,6 +286,7 @@ def validate_qc_export_input(data: dict) -> dict:
         "selectedMonths": selected_months,
         "includeAggregate": include_aggregate,
         "isCustomRange": is_custom_range,
+        "exportTime": export_time_final,
         "fromDate": from_date,
         "toDate": to_date,
         "coilIds": coil_ids,
@@ -346,13 +367,80 @@ def get_export_job_file(job_id: str, file_name: str | None = None) -> dict | Non
         return {"filePath": job["filePath"], "filename": job.get("filename")}
     return None
 
+def find_chromium_executable() -> str | None:
+    """Tự động tìm kiếm đường dẫn Chromium hoặc Chrome Headless Shell có sẵn."""
+    import sys
+    # 1. Configured CHROMIUM_PATH
+    if CHROMIUM_PATH and Path(CHROMIUM_PATH).exists():
+        return str(CHROMIUM_PATH)
+
+    # 2. Bundled inside application directory
+    candidates = [
+        APP_DIR / "browsers" / "chrome-headless-shell-win64" / "chrome-headless-shell.exe",
+        BASE_DIR / "browsers" / "chrome-headless-shell-win64" / "chrome-headless-shell.exe",
+        Path(sys.executable).parent / "browsers" / "chrome-headless-shell-win64" / "chrome-headless-shell.exe" if getattr(sys, "frozen", False) else None,
+        APP_DIR / "browsers" / "chromium" / "chrome.exe",
+        BASE_DIR / "browsers" / "chromium" / "chrome.exe",
+    ]
+    for c in candidates:
+        if c and c.exists():
+            return str(c)
+
+    # 3. System ms-playwright folder
+    local_app_data = os.getenv("LOCALAPPDATA", "")
+    if local_app_data:
+        p_pw = Path(local_app_data) / "ms-playwright"
+        if p_pw.exists():
+            try:
+                for shell_sub in p_pw.glob("chromium_headless_shell-*/chrome-headless-shell-win64/chrome-headless-shell.exe"):
+                    if shell_sub.exists():
+                        return str(shell_sub)
+                for chrome_sub in p_pw.glob("chromium-*/chrome-win/chrome.exe"):
+                    if chrome_sub.exists():
+                        return str(chrome_sub)
+            except Exception:
+                pass
+    return None
+
 def first_visible(locator):
     count = locator.count()
     for i in range(count):
         cand = locator.nth(i)
-        if cand.is_visible():
-            return cand
+        try:
+            if cand.is_visible():
+                return cand
+        except Exception:
+            # Fallback nếu browser cũ không hỗ trợ checkVisibility
+            try:
+                is_vis = cand.evaluate("el => !!(el.offsetWidth || el.offsetHeight || (el.getClientRects && el.getClientRects().length)) && window.getComputedStyle(el).display !== 'none' && window.getComputedStyle(el).visibility !== 'hidden'")
+                if is_vis:
+                    return cand
+            except Exception:
+                pass
     return None
+
+def safe_fill(control, val):
+    val_str = str(val)
+    try:
+        control.fill(val_str)
+    except Exception:
+        try:
+            control.fill(val_str, force=True)
+        except Exception:
+            control.evaluate("""(el, v) => {
+                el.value = v;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }""", val_str)
+
+def safe_click(control):
+    try:
+        control.click()
+    except Exception:
+        try:
+            control.click(force=True)
+        except Exception:
+            control.evaluate("el => el.click()")
 
 def fill_control(page, selector_or_locator, value, label=""):
     if isinstance(selector_or_locator, str):
@@ -388,19 +476,18 @@ def fill_control(page, selector_or_locator, value, label=""):
                 date_part, time_part = formatted.split(" ")
                 mm, dd, yyyy = date_part.split("/")
                 hh, mn = time_part.split(":")[:2]
-                control.fill(f"{yyyy}-{mm}-{dd}T{hh}:{mn}")
+                safe_fill(control, f"{yyyy}-{mm}-{dd}T{hh}:{mn}")
             except Exception:
-                control.fill(short_formatted)
+                safe_fill(control, short_formatted)
         else:
             try:
-                control.fill(formatted)
+                safe_fill(control, formatted)
             except Exception:
                 try:
-                    control.fill(short_formatted)
+                    safe_fill(control, short_formatted)
                 except Exception:
                     pass
-            control.evaluate("""([fullVal, shortVal]) => {
-                const el = this;
+            control.evaluate("""(el, [fullVal, shortVal]) => {
                 const limit = el.maxLength && el.maxLength > 0 ? el.maxLength : 100;
                 el.value = limit < 19 ? shortVal : fullVal;
                 el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -409,7 +496,7 @@ def fill_control(page, selector_or_locator, value, label=""):
             }""", [formatted, short_formatted])
         return
 
-    control.fill(str(value))
+    safe_fill(control, str(value))
 
 def run_qc_export_sync(job: dict):
     from playwright.sync_api import sync_playwright
@@ -423,16 +510,73 @@ def run_qc_export_sync(job: dict):
         launch_kwargs = {
             "headless": HEADLESS,
             "timeout": PAGE_TIMEOUT_MS,
+            "args": [
+                "--disable-extensions",
+                "--disable-gpu",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+                "--disable-background-networking",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-sync",
+                "--no-first-run",
+                "--blink-settings=imagesEnabled=false",
+            ]
         }
-        if CHROMIUM_PATH and Path(CHROMIUM_PATH).exists():
-            launch_kwargs["executable_path"] = CHROMIUM_PATH
+        
+        detected_exe = find_chromium_executable()
+        if detected_exe:
+            print(f"[QC Export] Sử dụng Chromium binary: {detected_exe}")
+            launch_kwargs["executable_path"] = detected_exe
 
-        browser = p.chromium.launch(**launch_kwargs)
+        try:
+            browser = p.chromium.launch(**launch_kwargs)
+        except Exception as e_launch:
+            print(f"[QC Export] Lỗi khởi động Chromium mặc định ({e_launch}), thử kênh hệ thống...")
+            # Fallback to system Microsoft Edge (preinstalled on Windows 10/11) or Chrome
+            try:
+                browser = p.chromium.launch(**{**launch_kwargs, "executable_path": None, "channel": "msedge"})
+            except Exception:
+                try:
+                    browser = p.chromium.launch(**{**launch_kwargs, "executable_path": None, "channel": "chrome"})
+                except Exception:
+                    raise e_launch
+
         try:
             context = browser.new_context(accept_downloads=True)
+
+            # Polyfill checkVisibility cho các trình duyệt Chromium / Edge đời cũ trên máy khác
+            context.add_init_script("""
+            if (typeof Element.prototype.checkVisibility !== 'function') {
+                Element.prototype.checkVisibility = function(options) {
+                    if (!this.isConnected) return false;
+                    let el = this;
+                    while (el) {
+                        const style = window.getComputedStyle(el);
+                        if (!style) return false;
+                        if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+                        if (options && options.checkOpacity && parseFloat(style.opacity) === 0) return false;
+                        el = el.parentElement;
+                    }
+                    const rect = this.getBoundingClientRect();
+                    return (rect.width > 0 && rect.height > 0) || (this.getClientRects && this.getClientRects().length > 0);
+                };
+            }
+            """)
+
             page = context.new_page()
             page.set_default_timeout(PAGE_TIMEOUT_MS)
             page.set_default_navigation_timeout(PAGE_TIMEOUT_MS)
+
+            # Chặn tải ảnh, media, font để tăng tốc độ tải trang lên gấp 3-5 lần
+            try:
+                page.route(
+                    "**/*",
+                    lambda route: route.abort() if route.request.resource_type in ["image", "media", "font"] else route.continue_()
+                )
+            except Exception:
+                pass
 
             last_dialog = [None]
             def on_dialog(dialog):
@@ -451,38 +595,59 @@ def run_qc_export_sync(job: dict):
             if not u_input or not p_input:
                 raise ValueError("Không tìm thấy form đăng nhập trên website QC.")
 
-            u_input.fill(QC_USERNAME)
-            p_input.fill(QC_PASSWORD)
+            safe_fill(u_input, QC_USERNAME)
+            safe_fill(p_input, QC_PASSWORD)
             b_sel = CSS_LOGIN_BUTTON or 'button[type="submit"], input[type="submit"], button:has-text("Đăng nhập")'
             login_btn = first_visible(page.locator(b_sel))
             if login_btn:
-                login_btn.click()
-            page.wait_for_timeout(2000)
+                safe_click(login_btn)
+            try:
+                page.wait_for_selector(CSS_OPEN_EXPORT, timeout=4000)
+            except Exception:
+                page.wait_for_timeout(600)
 
             # 2. Export execution
             if job.get("month") != "custom":
                 months = job.get("selectedMonths") or (list(range(1, 13)) if job.get("month") == "all" else [int(job.get("month"))])
                 
+                t_val = str(job.get("exportTime") or "08:00").strip()
+                if len(t_val.split(":")) == 2:
+                    t_val = f"{t_val}:00"
+
+                now = datetime.now()
+                curr_y = now.year
+                curr_m = now.month
+                curr_d = now.day
+
                 for idx, m in enumerate(months):
                     job["currentMonth"] = m
-                    job["statusMessage"] = f"Đang xuất dữ liệu Tháng {m} ({idx + 1}/{len(months)}) (Năm {year}) theo định dạng tìm kiếm mm/dd/yyyy hh:ss…"
-                    job["status"] = "running"
-                    job["updatedAt"] = datetime.utcnow()
-
                     next_m = 1 if m == 12 else m + 1
                     next_y = year + 1 if m == 12 else year
-                    month_start = f"{str(m).zfill(2)}/01/{year} 08:00:00"
-                    month_end = f"{str(next_m).zfill(2)}/01/{next_y} 08:00:00"
+
+                    month_start = f"{str(m).zfill(2)}/01/{year} {t_val}"
+                    if year == curr_y and m == curr_m:
+                        # Tháng hiện tại: chỉ lấy từ ngày 1 tháng hiện tại đến ngày hiện tại theo thời gian logic cũ (t_val)
+                        month_end = f"{str(curr_m).zfill(2)}/{str(curr_d).zfill(2)}/{year} {t_val}"
+                        job["statusMessage"] = f"Đang xuất dữ liệu Tháng {m} (Hiện tại) ({idx + 1}/{len(months)}) (01/{str(m).zfill(2)}/{year} {t_val} ➔ {str(curr_d).zfill(2)}/{str(curr_m).zfill(2)}/{year} {t_val})…"
+                    else:
+                        month_end = f"{str(next_m).zfill(2)}/01/{next_y} {t_val}"
+                        job["statusMessage"] = f"Đang xuất dữ liệu Tháng {m} ({idx + 1}/{len(months)}) (01/{str(m).zfill(2)}/{year} {t_val} ➔ 01/{str(next_m).zfill(2)}/{next_y} {t_val})…"
+
                     month_file_name = f"Thang_{m}.xlsx"
                     month_file_path = target_dir / month_file_name
                     backend_path = BACKEND_EXPORTS_DIR / month_file_name
+                    job["status"] = "running"
+                    job["updatedAt"] = datetime.utcnow()
 
                     download_succeeded = False
                     try:
                         open_btn = first_visible(page.locator(CSS_OPEN_EXPORT))
                         if open_btn:
-                            open_btn.click()
-                            page.wait_for_timeout(1000)
+                            safe_click(open_btn)
+                            try:
+                                page.wait_for_selector(CSS_DOWNLOAD_BUTTON, timeout=3000)
+                            except Exception:
+                                page.wait_for_timeout(300)
 
                         fill_control(page, CSS_FACTORY, job["factory"], "nhà máy")
                         fill_control(page, CSS_FROM_DATE, month_start, "ngày bắt đầu")
@@ -495,7 +660,7 @@ def run_qc_export_sync(job: dict):
                             raise ValueError("Không tìm thấy nút tải Excel.")
 
                         with page.expect_download(timeout=min(DOWNLOAD_TIMEOUT_MS, 60000)) as dl_info:
-                            dl_btn.click()
+                            safe_click(dl_btn)
                         download = dl_info.value
 
                         # Overwrite existing file cleanly on disk
@@ -658,8 +823,11 @@ def run_qc_export_sync(job: dict):
 
                 open_btn = first_visible(page.locator(CSS_OPEN_EXPORT))
                 if open_btn:
-                    open_btn.click()
-                    page.wait_for_timeout(1000)
+                    safe_click(open_btn)
+                    try:
+                        page.wait_for_selector(CSS_DOWNLOAD_BUTTON, timeout=3000)
+                    except Exception:
+                        page.wait_for_timeout(300)
 
                 fill_control(page, CSS_FACTORY, job["factory"], "nhà máy")
                 fill_control(page, CSS_FROM_DATE, job["fromDate"], "ngày bắt đầu")
@@ -672,7 +840,7 @@ def run_qc_export_sync(job: dict):
                     raise ValueError("Không tìm thấy nút tải Excel.")
 
                 with page.expect_download(timeout=min(DOWNLOAD_TIMEOUT_MS, 60000)) as dl_info:
-                    dl_btn.click()
+                    safe_click(dl_btn)
                 download = dl_info.value
 
                 # Overwrite existing file cleanly on disk

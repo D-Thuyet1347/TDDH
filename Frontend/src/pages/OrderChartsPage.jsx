@@ -35,7 +35,7 @@ import {
   Area,
   LabelList,
 } from 'recharts';
-import { getOrderDemandReports, getOrderDemandRows } from '../AllAPIs';
+import { getOrderDemandReports, getOrderDemandRows } from '../APIs';
 import QcLayout from '../components/QcLayout';
 import { Alert } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -360,9 +360,12 @@ export default function OrderChartsPage() {
   // Danh sách mác thép sau khi tìm kiếm và phân trang/giới hạn
   const displayedSteelGrades = useMemo(() => {
     let result = steelGradeDetailData;
-    if (searchGrade.trim()) {
-      const q = searchGrade.toLowerCase().trim();
-      result = result.filter((g) => g.name.toLowerCase().includes(q));
+    const tokens = searchGrade.toLowerCase().trim().split(/[\s,;]+/).filter(Boolean);
+    if (tokens.length > 0) {
+      result = result.filter((g) => {
+        const nameLower = g.name.toLowerCase();
+        return tokens.some((t) => nameLower.includes(t));
+      });
     }
     if (steelGradeLimit > 0) {
       result = result.slice(0, steelGradeLimit);

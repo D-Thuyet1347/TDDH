@@ -11,7 +11,7 @@ import {
   getJobs,
   getMongoStatus,
   getReports,
-} from '../AllAPIs';
+} from '../APIs';
 import QcLayout from '../components/QcLayout';
 import { Alert } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -85,8 +85,13 @@ function SectionHeading({ icon: Icon, title, subtitle, action }) {
 
 function ReportTable({ reports, loading, error, search }) {
   const filtered = useMemo(() => {
-    const q = search.trim().toLocaleLowerCase('vi-VN');
-    return q ? reports.filter(item => `${item.filename || ''} ${item.job_id || ''}`.toLocaleLowerCase('vi-VN').includes(q)) : reports;
+    const tokens = search.trim().toLocaleLowerCase('vi-VN').split(/[\s,;]+/).filter(Boolean);
+    return tokens.length > 0
+      ? reports.filter((item) => {
+          const target = `${item.filename || ''} ${item.job_id || ''}`.toLocaleLowerCase('vi-VN');
+          return tokens.some((t) => target.includes(t));
+        })
+      : reports;
   }, [reports, search]);
 
   if (loading && reports.length === 0) {

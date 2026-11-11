@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, AlertTriangle, Download, FileSpreadsheet, LoaderCircle, Search, TableProperties, Trash2 } from 'lucide-react';
-import { getReportFileUrl, getReports, deleteAllQcReports, deleteQcReport } from '../AllAPIs';
+import { getReportFileUrl, getReports, deleteAllQcReports, deleteQcReport } from '../APIs';
 import QcLayout from '../components/QcLayout';
 import { Alert } from '../components/ui/alert';
 import { Button } from '../components/ui/button';

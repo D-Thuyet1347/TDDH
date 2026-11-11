@@ -86,6 +86,36 @@ app.mount("/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
 app.mount("/images", StaticFiles(directory=str(upload_dir)), name="images")
 app.mount("/exports", StaticFiles(directory=str(EXPORTS_DIR)), name="exports")
 
-@app.get("/")
-async def root():
-    return {"status": "online", "message": "API Server Python is running..."}
+# Frontend Static & SPA Routing
+from fastapi.responses import FileResponse
+from fastapi import HTTPException
+
+frontend_build_candidates = [
+    Path(__file__).resolve().parent.parent / "Frontend" / "build",
+    Path(__file__).resolve().parent / "build",
+    Path.cwd() / "Frontend" / "build",
+    Path.cwd() / "build",
+]
+frontend_dir = None
+for candidate in frontend_build_candidates:
+    if candidate.exists() and (candidate / "index.html").exists():
+        frontend_dir = candidate
+        break
+
+if frontend_dir:
+    static_folder = frontend_dir / "static"
+    if static_folder.exists():
+        app.mount("/static", StaticFiles(directory=str(static_folder)), name="frontend_static")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        if any(full_path.startswith(prefix) for prefix in ["api", "docs", "openapi.json", "uploads", "exports", "images"]):
+            raise HTTPException(status_code=404, detail="Not Found")
+        file_path = frontend_dir / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(frontend_dir / "index.html")
+else:
+    @app.get("/")
+    async def root():
+        return {"status": "online", "message": "API Server Python is running..."}

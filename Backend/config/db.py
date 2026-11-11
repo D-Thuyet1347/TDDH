@@ -14,6 +14,9 @@ def get_db_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous = NORMAL;")
     conn.execute("PRAGMA busy_timeout = 30000;")
     conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA cache_size = -64000;")  # 64MB cache
+    conn.execute("PRAGMA mmap_size = 268435456;") # 256MB mmap
+    conn.execute("PRAGMA temp_store = MEMORY;")
     return conn
 
 @contextmanager

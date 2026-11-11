@@ -1,0 +1,18 @@
+===============================================================
+       HỆ THỐNG THEO DÕI TIẾN ĐỘ ĐƠN HÀNG HRC2 (BẢN PORTABLE)
+===============================================================
+
+CÁCH SỬ DỤNG TRÊN MÁY TÍNH KHÁC:
+1. Sao chép toàn bộ thư mục này ("TheoDoiTienDoDonHang") sang máy tính khác
+   (qua USB, Zalo, Google Drive, hoặc mạng LAN).
+2. Nhấp đúp vào file "TheoDoiTienDoDonHang.exe" hoặc "Chay_Ung_Dung.bat".
+3. Trình duyệt web (Edge/Chrome) sẽ tự động mở trang web: http://localhost:5000.
+4. Mọi dữ liệu đơn hàng và file xuất Excel sẽ được lưu tự động trong các thư mục:
+   - "data/hrc2_database.sqlite": Cơ sở dữ liệu chính
+   - "exports/": Thư mục chứa các file Excel xuất báo cáo
+   - "uploads/": Thư mục chứa file tải lên
+
+LƯU Ý:
+- KHÔNG CẦN cài đặt Python, Node.js hay bất kỳ phần mềm nào khác.
+- Đã tích hợp sẵn trình duyệt Microsoft Edge có sẵn trên Windows 10/11.
+===============================================================

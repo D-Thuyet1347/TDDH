@@ -27,7 +27,7 @@ import {
   getOrderDemandRows,
   syncOrderDemandQc,
   updateOrderDemandRow,
-} from '../AllAPIs';
+} from '../APIs';
 import QcLayout from '../components/QcLayout';
 import ExcelFilterDropdown from '../components/ExcelFilterDropdown';
 import { Alert } from '../components/ui/alert';

@@ -12,7 +12,7 @@ import {
   LoaderCircle,
   ExternalLink,
 } from 'lucide-react';
-import { getQcExportJobs } from '../AllAPIs';
+import { getQcExportJobs } from '../APIs';
 
 const navigation = [
   { to: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },

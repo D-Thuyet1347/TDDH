@@ -53,6 +53,13 @@ def import_qc_report(buffer: bytes | None = None, original_name: str = "Bao_Cao_
     batch_size = 3000
 
     with get_db() as conn:
+        try:
+            conn.execute("PRAGMA synchronous = NORMAL")
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA temp_store = MEMORY")
+            conn.execute("PRAGMA cache_size = 20000")
+        except Exception:
+            pass
         for sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
             rows_iter = ws.iter_rows(values_only=True)
@@ -217,9 +224,13 @@ def get_report_rows(report_id: str, sheet_name: str | None = None, limit: int = 
         params.append(sheet_name)
 
     if search:
-        where_clauses.append("(order_id LIKE ? OR coil_id LIKE ? OR tdc_code LIKE ?)")
-        s_like = f"%{search}%"
-        params.extend([s_like, s_like, s_like])
+        tokens = [t.strip() for t in re.split(r'[\s,;]+', search) if t.strip()]
+        if tokens:
+            token_clauses = []
+            for t in tokens:
+                token_clauses.append("(order_id LIKE ? OR coil_id LIKE ? OR tdc_code LIKE ?)")
+                params.extend([f"%{t}%", f"%{t}%", f"%{t}%"])
+            where_clauses.append(f"({' OR '.join(token_clauses)})")
 
     where_str = " AND ".join(where_clauses)
     count_row = query_one(f"SELECT count(*) as total FROM qcrows WHERE {where_str}", tuple(params))

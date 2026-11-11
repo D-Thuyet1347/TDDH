@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import {
   AlertCircle,
   Copy,
@@ -10,7 +11,7 @@ import {
   Search,
   TableProperties,
 } from 'lucide-react';
-import { getReportColumnValues, getReportFileUrl, getReportQualitySummary, getReportRows, getReports } from '../AllAPIs';
+import { getReportColumnValues, getReportFileUrl, getReportQualitySummary, getReportRows, getReports } from '../APIs';
 import QcLayout from '../components/QcLayout';
 import ExcelFilterDropdown from '../components/ExcelFilterDropdown';
 import { Alert } from '../components/ui/alert';
@@ -375,12 +376,16 @@ export default function DataPage() {
 
   // Filtered and sorted rows
   const filteredRows = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('vi-VN');
+    const rawTokens = search.trim().toLocaleLowerCase('vi-VN').split(/[\s,;]+/).filter(Boolean);
     const result = rows.filter((row) => {
       const values = row.values || {};
-      const matchesSearch = !query || Object.values(values).some((value) =>
-        String(value ?? '').toLocaleLowerCase('vi-VN').includes(query)
-      );
+      const matchesSearch =
+        rawTokens.length === 0 ||
+        rawTokens.some((token) =>
+          Object.values(values).some((value) =>
+            String(value ?? '').toLocaleLowerCase('vi-VN').includes(token)
+          )
+        );
 
       const matchesFilters = Object.entries(filters).every(([column, filter]) => {
         if (!filter) return true;
@@ -428,6 +433,28 @@ export default function DataPage() {
   }, [rows, search, filters, sortState]);
 
   const totalFilteredCount = filteredRows.length;
+
+  const handleExportExcel = () => {
+    const sourceRows = filteredRows.length ? filteredRows : rows;
+    if (!sourceRows.length) {
+      alert('Không có dòng dữ liệu nào để xuất.');
+      return;
+    }
+    const data = sourceRows.map((r, idx) => {
+      const rowObj = { 'STT': idx + 1, 'Dòng': r.rowNumber || (idx + 1) };
+      columns.forEach((col) => {
+        rowObj[col] = r.values?.[col] ?? '';
+      });
+      return rowObj;
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    const sheetTitle = (sheet || 'Du_Lieu_QC').substring(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetTitle);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const fileName = `Xuat_Du_Lieu_${sheetTitle}_${dateStr}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT) + 2 * OVERSCAN;
   const endIndex = Math.min(totalFilteredCount, startIndex + visibleCount);
@@ -480,13 +507,24 @@ export default function DataPage() {
               {routeSheet ? `Dữ liệu sheet ${routeSheet} trong báo cáo đã nhập.` : 'Xem và lọc chi tiết các dòng dữ liệu Excel.'}
             </p>
           </div>
-          {selectedReport && (
-            <Button asChild variant="outline" className="h-10 rounded-xl border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50">
-              <a href={getReportFileUrl(selectedReport.job_id)}>
-                <Download size={15} /> Tải file gốc
-              </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={loadingRows || rows.length === 0}
+              className="h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white px-4 text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all"
+              title="Xuất dữ liệu Excel đang hiển thị theo bộ lọc ra file .xlsx"
+            >
+              <Download size={15} /> Xuất dữ liệu ({filteredRows.length || rows.length} dòng)
             </Button>
-          )}
+            {selectedReport && (
+              <Button asChild variant="outline" className="h-10 rounded-xl border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50">
+                <a href={getReportFileUrl(selectedReport.job_id)}>
+                  <Download size={15} /> Tải file gốc
+                </a>
+              </Button>
+            )}
+          </div>
         </header>
 
         {location.state?.message && (
