@@ -26,14 +26,15 @@ def save_settings(data: dict):
     """, (AUTO_EXPORT_ID, json.dumps(data, ensure_ascii=False), now))
 
 def public_schedule(doc: dict | None) -> dict:
+    cur_month = datetime.now().month
     if not doc:
         return {
             "enabled": False,
             "factory": "",
             "report_id": "",
             "year": datetime.now().year,
-            "month": "all",
-            "selected_months": list(range(1, 13)),
+            "month": str(cur_month),
+            "selected_months": [cur_month],
             "include_aggregate": True,
             "is_custom_range": False,
             "export_time": "08:00",
@@ -65,8 +66,8 @@ def public_schedule(doc: dict | None) -> dict:
         "factory": doc.get("factory", ""),
         "report_id": doc.get("reportId", ""),
         "year": doc.get("year", datetime.now().year),
-        "month": doc.get("month", "all"),
-        "selected_months": doc.get("selectedMonths") or list(range(1, 13)),
+        "month": doc.get("month", str(cur_month)),
+        "selected_months": doc.get("selectedMonths") or [cur_month],
         "include_aggregate": doc.get("includeAggregate", True),
         "is_custom_range": bool(doc.get("isCustomRange")),
         "export_time": doc.get("exportTime", "08:00"),

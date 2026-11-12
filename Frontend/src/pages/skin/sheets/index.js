@@ -6,3 +6,5 @@ export { default as PivotTableSheet } from './PivotTableSheet';
 export { default as HangVotSheet } from './HangVotSheet';
 export { default as PoSkinSheet } from './PoSkinSheet';
 export { default as GenericSkinSheet } from './GenericSkinSheet';
+export { default as RulesSkinSheet } from './RulesSkinSheet';
+export { default as BaoCaoSkinSheet } from './BaoCaoSkinSheet';

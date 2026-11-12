@@ -23,6 +23,8 @@ export default function GenericSkinSheet({
   onStartEdit,
   onCommitEdit,
   onCancelEdit,
+  onCopySelectedIds,
+  idColumnName,
 }) {
   const columns = getSheetColumns(activeSheet);
 
@@ -60,6 +62,8 @@ export default function GenericSkinSheet({
             onStartEdit={onStartEdit}
             onCommitEdit={onCommitEdit}
             onCancelEdit={onCancelEdit}
+            onCopySelectedIds={onCopySelectedIds}
+            idColumnName={idColumnName}
           />
         )}
       </div>

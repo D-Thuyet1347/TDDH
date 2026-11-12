@@ -58,8 +58,49 @@ def execute_many(sql: str, params_list: list) -> int:
         cursor = conn.executemany(sql, params_list)
         return cursor.rowcount
 
+def _migrate_table_names(conn: sqlite3.Connection):
+    """Rename legacy non-standard table names to standard snake_case plural names."""
+    existing = {
+        row[0]
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    renames = [
+        ("qcreports", "qc_reports"),
+        ("qcrows", "qc_rows"),
+        ("skin_pivot_coil_req", "skin_pivot_coil_reqs"),
+        ("skin_pivot_po_req", "skin_pivot_po_reqs"),
+        ("skin_pivot_priority", "skin_pivot_priorities"),
+    ]
+    for old_name, new_name in renames:
+        if old_name in existing and new_name not in existing:
+            conn.execute(f"ALTER TABLE {old_name} RENAME TO {new_name};")
+            existing.remove(old_name)
+            existing.add(new_name)
+            print(f"[SQLite DB] Migrated table '{old_name}' -> '{new_name}'")
+
+    # Clean up legacy index names so standard index names replace them cleanly
+    legacy_indexes = [
+        "idx_qcreports_report_type",
+        "idx_qcrows_report_id",
+        "idx_qcrows_coil_id",
+        "idx_qcrows_order_id",
+        "idx_qcrows_tdc_code",
+        "idx_qcrows_slab_id",
+        "idx_ncrows_report_id",
+        "idx_ncrows_sheet_name",
+        "idx_ncrows_order_id",
+        "idx_pivot_coil_id",
+        "idx_pivot_po",
+        "idx_pivot_priority_target",
+    ]
+    for idx_name in legacy_indexes:
+        conn.execute(f"DROP INDEX IF EXISTS {idx_name};")
+
+
 def init_sqlite_db():
     with get_db() as conn:
+        _migrate_table_names(conn)
+
         # 1. Users table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -78,7 +119,7 @@ def init_sqlite_db():
 
         # 2. QC Reports metadata
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS qcreports (
+            CREATE TABLE IF NOT EXISTS qc_reports (
                 id TEXT PRIMARY KEY,
                 filename TEXT NOT NULL,
                 original_name TEXT,
@@ -88,14 +129,15 @@ def init_sqlite_db():
                 rows_imported INTEGER DEFAULT 0,
                 sheets TEXT,
                 created_at TEXT,
-                updated_at TEXT
+                updated_at TEXT,
+                quality_summary_json TEXT
             );
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_qcreports_report_type ON qcreports(report_type);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_qc_reports_report_type ON qc_reports(report_type);")
 
         # 3. QC Rows
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS qcrows (
+            CREATE TABLE IF NOT EXISTS qc_rows (
                 id TEXT PRIMARY KEY,
                 report_id TEXT NOT NULL,
                 sheet_name TEXT,
@@ -112,11 +154,11 @@ def init_sqlite_db():
                 created_at TEXT
             );
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_qcrows_report_id ON qcrows(report_id);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_qcrows_coil_id ON qcrows(coil_id);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_qcrows_order_id ON qcrows(order_id);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_qcrows_tdc_code ON qcrows(tdc_code);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_qcrows_slab_id ON qcrows(slab_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_qc_rows_report_id ON qc_rows(report_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_qc_rows_coil_id ON qc_rows(coil_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_qc_rows_order_id ON qc_rows(order_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_qc_rows_tdc_code ON qc_rows(tdc_code);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_qc_rows_slab_id ON qc_rows(slab_id);")
 
         # 4. NC Reports metadata (Order demand)
         conn.execute("""
@@ -146,9 +188,9 @@ def init_sqlite_db():
                 created_at TEXT
             );
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ncrows_report_id ON nc_rows(report_id);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ncrows_sheet_name ON nc_rows(sheet_name);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ncrows_order_id ON nc_rows(order_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_nc_rows_report_id ON nc_rows(report_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_nc_rows_sheet_name ON nc_rows(sheet_name);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_nc_rows_order_id ON nc_rows(order_id);")
 
         # 6. QC Auto export settings
         conn.execute("""

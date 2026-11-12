@@ -6,6 +6,7 @@ import {
   RefreshCw,
   LoaderCircle,
   FileSpreadsheet,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
@@ -33,15 +34,23 @@ export default function KeHoachSheet({
   onStartEdit,
   onCommitEdit,
   onCancelEdit,
+  onCopySelectedIds,
+  idColumnName,
   skin2Target,
   setSkin2Target,
   skin4Target,
   setSkin4Target,
+  prodFromDate,
+  setProdFromDate,
+  prodToDate,
+  setProdToDate,
   runningKeHoach,
   onRunKeHoach,
   keHoachMatrixData,
   loadingKeHoachMatrix,
   onRefreshMatrix,
+  unmatchedGrades = [],
+  onGoToRulesSkin,
 }) {
   const [selectedKeHoachPairIdx, setSelectedKeHoachPairIdx] = useState(0);
   const [textjoinDelimiter, setTextjoinDelimiter] = useState(' ');
@@ -51,53 +60,6 @@ export default function KeHoachSheet({
     const idx = Math.min(Math.max(0, selectedKeHoachPairIdx), keHoachMatrixData.matrix_pairs.length - 1);
     return keHoachMatrixData.matrix_pairs[idx] || null;
   }, [keHoachMatrixData, selectedKeHoachPairIdx]);
-
-  const handleQuickCopyText = (text, label) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text);
-    successToast(`Đã copy TEXTJOIN của ${label}!`);
-  };
-
-  const handleQuickCopyCell = (text) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text);
-    successToast(`Đã copy mã cuộn: ${text}`);
-  };
-
-  const handleCopyMatrixCol = (pair, colKey, label) => {
-    if (!pair?.grid_rows?.length) return;
-    const items = pair.grid_rows.map(r => r[colKey]).filter(Boolean);
-    if (!items.length) {
-      errorToast(`Không có cuộn nào trong cột ${label}`);
-      return;
-    }
-    const text = items.join(textjoinDelimiter === '\\n' ? '\r\n' : textjoinDelimiter);
-    navigator.clipboard.writeText(text);
-    successToast(`Đã copy ${items.length} cuộn của cột ${label}!`);
-  };
-
-  const handleCopyMatrixAll = (pair) => {
-    if (!pair?.grid_rows?.length) return;
-    const headers = [
-      `1.Skin 2 (${pair.skin2_p1_id || ''})`,
-      `2.Skin 2 (${pair.skin2_p2_id || ''})`,
-      `1.Skin 4 (${pair.skin4_p1_id || ''})`,
-      `2.Skin 4 (${pair.skin4_p2_id || ''})`,
-    ];
-    const topRow = [
-      pair.top_row?.s1_2 || '',
-      pair.top_row?.s2_2 || '',
-      pair.top_row?.s1_4 || '',
-      pair.top_row?.s2_4 || '',
-    ];
-    const lines = [
-      topRow.join('\t'),
-      headers.join('\t'),
-      ...pair.grid_rows.map(r => [r.s1_2 || '', r.s2_2 || '', r.s1_4 || '', r.s2_4 || ''].join('\t'))
-    ];
-    navigator.clipboard.writeText(lines.join('\r\n'));
-    successToast(`Đã copy toàn bộ 4 cột ma trận của ${pair.pair_title}!`);
-  };
 
   const handleCopyPlanCoils = (type) => {
     if (!currentMatrixPair) {
@@ -207,7 +169,11 @@ export default function KeHoachSheet({
               min={40}
               max={100}
               value={skin2Target}
-              onChange={(e) => setSkin2Target(Math.max(40, parseInt(e.target.value) || 40))}
+              onChange={(e) => setSkin2Target(e.target.value)}
+              onBlur={() => {
+                const n = parseInt(skin2Target, 10);
+                setSkin2Target(Number.isFinite(n) ? Math.min(100, Math.max(40, n)) : 50);
+              }}
               className="w-14 h-6 text-center font-bold text-xs bg-yellow-200 border border-yellow-400 rounded focus:outline-none focus:ring-1 focus:ring-yellow-500"
               title="Số lượng cuộn mục tiêu cho 1 Plan của Skin 2 (Mặc định 50, tối thiểu 40)"
             />
@@ -221,10 +187,58 @@ export default function KeHoachSheet({
               min={40}
               max={100}
               value={skin4Target}
-              onChange={(e) => setSkin4Target(Math.max(40, parseInt(e.target.value) || 40))}
+              onChange={(e) => setSkin4Target(e.target.value)}
+              onBlur={() => {
+                const n = parseInt(skin4Target, 10);
+                setSkin4Target(Number.isFinite(n) ? Math.min(100, Math.max(40, n)) : 50);
+              }}
               className="w-14 h-6 text-center font-bold text-xs bg-yellow-200 border border-yellow-400 rounded focus:outline-none focus:ring-1 focus:ring-yellow-500"
               title="Số lượng cuộn mục tiêu cho 1 Plan của Skin 4 (Mặc định 50, tối thiểu 40)"
             />
+          </div>
+
+          {/* Prod From Date Selector */}
+          <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1">
+            <span className="text-xs font-bold text-slate-800 whitespace-nowrap">Từ ngày SX:</span>
+            <input
+              type="date"
+              value={prodFromDate || ''}
+              onChange={(e) => setProdFromDate?.(e.target.value)}
+              className="h-6 text-xs font-bold bg-white border border-blue-300 rounded px-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              title="Lọc các cuộn có Ngày sản xuất từ ngày này trở đi (so với ngày hiện tại >= 2 ngày)"
+            />
+            {prodFromDate && (
+              <button
+                type="button"
+                onClick={() => setProdFromDate?.('')}
+                className="text-xs font-bold text-blue-600 hover:text-blue-900 px-1"
+                title="Xóa bộ lọc Từ ngày SX"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          {/* Prod To Date Selector */}
+          <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-1">
+            <span className="text-xs font-bold text-slate-800 whitespace-nowrap">Đến ngày SX:</span>
+            <input
+              type="date"
+              value={prodToDate || ''}
+              onChange={(e) => setProdToDate?.(e.target.value)}
+              className="h-6 text-xs font-bold bg-white border border-indigo-300 rounded px-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              title="Chỉ lập kế hoạch cho các cuộn có Ngày sản xuất đến ngày này trở về trước (để trống nếu không giới hạn)"
+            />
+            {prodToDate && (
+              <button
+                type="button"
+                onClick={() => setProdToDate?.('')}
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-900 px-1"
+                title="Xóa bộ lọc Đến ngày SX"
+              >
+                ×
+              </button>
+            )}
           </div>
 
           {/* Run Ke Hoach Button */}
@@ -303,6 +317,40 @@ export default function KeHoachSheet({
         </div>
       </div>
 
+      {unmatchedGrades.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-rose-50 border border-rose-200 rounded-xl">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <AlertTriangle size={18} className="text-rose-600 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-rose-900">
+                Có {unmatchedGrades.length} mác phôi chưa nằm trong nhóm MC / LC / HC (đã bị xếp cuối khi lập kế hoạch):
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {unmatchedGrades.map((g) => (
+                  <Badge
+                    key={g.grade}
+                    variant="outline"
+                    className="bg-white text-rose-800 border-rose-300 text-[11px] font-semibold"
+                  >
+                    {g.grade} ({g.count} cuộn)
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </div>
+          {onGoToRulesSkin && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={onGoToRulesSkin}
+              className="h-8 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shrink-0"
+            >
+              Mở Rules_SKIN để phân nhóm
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* MAIN CONTENT AREA: Table (left) + Matrix Panel (right) */}
       <div className="flex flex-col xl:flex-row gap-3 items-start">
         {/* LEFT: Virtual Table */}
@@ -339,357 +387,11 @@ export default function KeHoachSheet({
               onCancelEdit={onCancelEdit}
               onRowClick={handleRowClick}
               renderCustomCell={renderCustomCell}
+              onCopySelectedIds={onCopySelectedIds}
+              idColumnName={idColumnName}
             />
           )}
         </div>
-
-        {/* RIGHT: 4-Column Matrix Sidebar matching Screenshots */}
-        {rows.length > 0 && (
-          <div className="w-full xl:w-[500px] shrink-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
-            {/* Header */}
-            <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-xs text-slate-800">Ma trận cuộn Plan (2 Skin)</span>
-                  {currentMatrixPair && (
-                    <Badge className="bg-sky-100 text-sky-800 border-sky-300 font-mono text-[11px] font-bold">
-                      {currentMatrixPair.pair_title}
-                    </Badge>
-                  )}
-                </div>
-                {currentMatrixPair && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => handleCopyMatrixAll(currentMatrixPair)}
-                    className="h-7 text-[11px] bg-slate-800 hover:bg-slate-700 text-white font-bold px-2.5 rounded-lg flex items-center gap-1 shadow-2xs"
-                    title="Sao chép toàn bộ 4 cột ma trận (Tab-separated để dán trực tiếp vào Excel)"
-                  >
-                    <Copy size={12} /> Copy 4 cột
-                  </Button>
-                )}
-              </div>
-
-              {/* Plan pair switcher / selector */}
-              {keHoachMatrixData?.matrix_pairs?.length > 1 && (
-                <div className="flex items-center gap-2">
-                  <label className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">Chọn bộ Plan:</label>
-                  <select
-                    value={selectedKeHoachPairIdx}
-                    onChange={(e) => setSelectedKeHoachPairIdx(Number(e.target.value))}
-                    className="h-7 text-xs font-bold rounded-lg border border-slate-300 bg-white px-2 py-0.5 text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 flex-1 truncate cursor-pointer"
-                  >
-                    {keHoachMatrixData.matrix_pairs.map((pair, idx) => (
-                      <option key={idx} value={idx}>
-                        {pair.pair_title} ({pair.skin2_coils_count + pair.skin4_coils_count} cuộn)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Plan Checkbox list in Col H & I matching Screenshot */}
-              {keHoachMatrixData?.plans_list?.length > 0 && (
-                <div className="flex flex-col gap-1 pt-1 border-t border-slate-200/80">
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold px-0.5">
-                    <span>Cột H &amp; I: Danh sách Plan ID (Click để xem / copy)</span>
-                    <span>{keHoachMatrixData.plans_list.length} Plans</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1 bg-white border border-slate-200/70 rounded-lg">
-                    {keHoachMatrixData.plans_list.map((pItem, pIdx) => {
-                      const isSelected = currentMatrixPair?.selected_plan_ids?.includes(pItem.id);
-                      return (
-                        <div
-                          key={pIdx}
-                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border font-mono transition-colors ${
-                            isSelected
-                              ? 'bg-amber-100 border-amber-400 text-amber-950 font-bold shadow-2xs'
-                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span
-                            onClick={() => {
-                              const foundIdx = keHoachMatrixData.matrix_pairs.findIndex(pr =>
-                                pr.selected_plan_ids?.includes(pItem.id)
-                              );
-                              if (foundIdx !== -1) setSelectedKeHoachPairIdx(foundIdx);
-                            }}
-                            className="cursor-pointer flex items-center gap-1"
-                            title="Click để chuyển ma trận đến bộ chứa Plan này"
-                          >
-                            <span className={isSelected ? "text-amber-800 font-bold" : "text-slate-400"}>
-                              {isSelected ? "☑" : "☐"}
-                            </span>
-                            <span>{pItem.id}</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyPlanByPlanId(pItem.id)}
-                            className="hover:opacity-80 text-slate-500 hover:text-slate-800 p-0.5 ml-0.5"
-                            title={`Copy 50 cuộn của ${pItem.id}`}
-                          >
-                            <Copy size={9} />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* TEXTJOIN Quick Copy Bar (Copy 1 lần 50 cuộn) */}
-              {currentMatrixPair && (
-                <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-200/90 bg-amber-50/50 p-2 rounded-lg mt-0.5">
-                  <div className="flex items-center justify-between gap-1 text-[11px]">
-                    <span className="font-bold text-slate-800 flex items-center gap-1">
-                      <Copy size={12} className="text-amber-700" /> Copy 1 lần 50 cuộn (Textjoin):
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleCopyPlanCoils('s1_2')}
-                      className="h-7 text-xs bg-sky-700 hover:bg-sky-600 text-white font-bold px-2 rounded-lg flex items-center justify-center gap-1 shadow-2xs truncate"
-                      title={`Copy 50 cuộn của 1.Skin 2 (${currentMatrixPair.skin2_p1_id}) dạng TEXTJOIN`}
-                    >
-                      <Copy size={11} />
-                      <span className="truncate">1.Skin 2 ({currentMatrixPair.skin2_p1_id || '—'})</span>
-                    </Button>
-
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleCopyPlanCoils('s2_2')}
-                      className="h-7 text-xs bg-sky-600 hover:bg-sky-500 text-white font-bold px-2 rounded-lg flex items-center justify-center gap-1 shadow-2xs truncate"
-                      title={`Copy 50 cuộn của 2.Skin 2 (${currentMatrixPair.skin2_p2_id}) dạng TEXTJOIN`}
-                    >
-                      <Copy size={11} />
-                      <span className="truncate">2.Skin 2 ({currentMatrixPair.skin2_p2_id || '—'})</span>
-                    </Button>
-
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleCopyPlanCoils('s1_4')}
-                      className="h-7 text-xs bg-rose-700 hover:bg-rose-600 text-white font-bold px-2 rounded-lg flex items-center justify-center gap-1 shadow-2xs truncate"
-                      title={`Copy 50 cuộn của 1.Skin 4 (${currentMatrixPair.skin4_p1_id}) dạng TEXTJOIN`}
-                    >
-                      <Copy size={11} />
-                      <span className="truncate">1.Skin 4 ({currentMatrixPair.skin4_p1_id || '—'})</span>
-                    </Button>
-
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleCopyPlanCoils('s2_4')}
-                      className="h-7 text-xs bg-rose-600 hover:bg-rose-500 text-white font-bold px-2 rounded-lg flex items-center justify-center gap-1 shadow-2xs truncate"
-                      title={`Copy 50 cuộn của 2.Skin 4 (${currentMatrixPair.skin4_p2_id}) dạng TEXTJOIN`}
-                    >
-                      <Copy size={11} />
-                      <span className="truncate">2.Skin 4 ({currentMatrixPair.skin4_p2_id || '—'})</span>
-                    </Button>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => handleCopyPlanCoils('all')}
-                      className="text-emerald-700 hover:text-emerald-800 font-bold hover:underline flex items-center gap-1 cursor-pointer"
-                      title="Copy toàn bộ cuộn của cả 4 Plan trong bộ"
-                    >
-                      <Copy size={10} /> Copy cả 4 Plan ({currentMatrixPair.skin2_coils_count + currentMatrixPair.skin4_coils_count} cuộn)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyMatrixAll(currentMatrixPair)}
-                      className="text-slate-600 hover:text-slate-800 font-bold hover:underline flex items-center gap-1 cursor-pointer"
-                      title="Copy dạng 4 cột chuẩn Excel"
-                    >
-                      <Copy size={10} /> Copy 4 cột ma trận (Excel)
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Matrix Table */}
-            <div className="flex-1 overflow-auto max-h-[60vh] border-b border-slate-100">
-              <table className="w-full text-center text-xs border-collapse font-mono select-text">
-                <thead className="sticky top-0 z-10 shadow-xs">
-                  {/* Row 1: Yellow cells showing TEXTJOIN string */}
-                  <tr className="bg-yellow-300 border-b border-yellow-400 font-bold text-amber-950">
-                    <th
-                      className="py-2 px-1 border-r border-yellow-400 truncate w-1/4 text-[11px] cursor-pointer hover:bg-yellow-200 transition-colors group"
-                      title={`Bấm để copy 50 cuộn chuẩn TEXTJOIN(" ", TRUE, ...):\n${currentMatrixPair?.top_row?.s1_2 || ''}`}
-                      onClick={() => currentMatrixPair?.top_row?.s1_2 && handleQuickCopyText(currentMatrixPair.top_row.s1_2, `1.Skin 2 (${currentMatrixPair.skin2_p1_id || ''})`)}
-                    >
-                      <div className="flex items-center justify-between px-1 gap-1">
-                        <span className="truncate">{currentMatrixPair?.top_row?.s1_2 || '—'}</span>
-                        <Copy size={10} className="shrink-0 text-amber-900 opacity-60 group-hover:opacity-100" />
-                      </div>
-                    </th>
-                    <th
-                      className="py-2 px-1 border-r border-yellow-400 truncate w-1/4 text-[11px] cursor-pointer hover:bg-yellow-200 transition-colors group"
-                      title={`Bấm để copy 50 cuộn chuẩn TEXTJOIN(" ", TRUE, ...):\n${currentMatrixPair?.top_row?.s2_2 || ''}`}
-                      onClick={() => currentMatrixPair?.top_row?.s2_2 && handleQuickCopyText(currentMatrixPair.top_row.s2_2, `2.Skin 2 (${currentMatrixPair.skin2_p2_id || ''})`)}
-                    >
-                      <div className="flex items-center justify-between px-1 gap-1">
-                        <span className="truncate">{currentMatrixPair?.top_row?.s2_2 || '—'}</span>
-                        <Copy size={10} className="shrink-0 text-amber-900 opacity-60 group-hover:opacity-100" />
-                      </div>
-                    </th>
-                    <th
-                      className="py-2 px-1 border-r border-yellow-400 truncate w-1/4 text-[11px] cursor-pointer hover:bg-yellow-200 transition-colors group"
-                      title={`Bấm để copy 50 cuộn chuẩn TEXTJOIN(" ", TRUE, ...):\n${currentMatrixPair?.top_row?.s1_4 || ''}`}
-                      onClick={() => currentMatrixPair?.top_row?.s1_4 && handleQuickCopyText(currentMatrixPair.top_row.s1_4, `1.Skin 4 (${currentMatrixPair.skin4_p1_id || ''})`)}
-                    >
-                      <div className="flex items-center justify-between px-1 gap-1">
-                        <span className="truncate">{currentMatrixPair?.top_row?.s1_4 || '—'}</span>
-                        <Copy size={10} className="shrink-0 text-amber-900 opacity-60 group-hover:opacity-100" />
-                      </div>
-                    </th>
-                    <th
-                      className="py-2 px-1 truncate w-1/4 text-[11px] cursor-pointer hover:bg-yellow-200 transition-colors group"
-                      title={`Bấm để copy 50 cuộn chuẩn TEXTJOIN(" ", TRUE, ...):\n${currentMatrixPair?.top_row?.s2_4 || ''}`}
-                      onClick={() => currentMatrixPair?.top_row?.s2_4 && handleQuickCopyText(currentMatrixPair.top_row.s2_4, `2.Skin 4 (${currentMatrixPair.skin4_p2_id || ''})`)}
-                    >
-                      <div className="flex items-center justify-between px-1 gap-1">
-                        <span className="truncate">{currentMatrixPair?.top_row?.s2_4 || '—'}</span>
-                        <Copy size={10} className="shrink-0 text-amber-900 opacity-60 group-hover:opacity-100" />
-                      </div>
-                    </th>
-                  </tr>
-
-                  {/* Row 2: Sub-column Headers */}
-                  <tr className="font-bold text-white text-[11px] select-none">
-                    <th className="py-1.5 px-1 bg-sky-600 border-r border-sky-700 w-1/4">
-                      <div className="flex flex-col items-center justify-center gap-0.5">
-                        <div className="flex items-center gap-1">
-                          <span>1.Skin 2</span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyMatrixCol(currentMatrixPair, 's1_2', `1.Skin 2 (${currentMatrixPair?.skin2_p1_id || ''})`)}
-                            title="Copy cột 1.Skin 2"
-                            className="hover:opacity-80 p-0.5"
-                          >
-                            <Copy size={10} />
-                          </button>
-                        </div>
-                        {currentMatrixPair?.skin2_p1_id && (
-                          <span className="text-[10px] font-mono text-sky-200 font-semibold">{currentMatrixPair.skin2_p1_id}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th className="py-1.5 px-1 bg-sky-600 border-r border-sky-700 w-1/4">
-                      <div className="flex flex-col items-center justify-center gap-0.5">
-                        <div className="flex items-center gap-1">
-                          <span>2.Skin 2</span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyMatrixCol(currentMatrixPair, 's2_2', `2.Skin 2 (${currentMatrixPair?.skin2_p2_id || ''})`)}
-                            title="Copy cột 2.Skin 2"
-                            className="hover:opacity-80 p-0.5"
-                          >
-                            <Copy size={10} />
-                          </button>
-                        </div>
-                        {currentMatrixPair?.skin2_p2_id && (
-                          <span className="text-[10px] font-mono text-sky-200 font-semibold">{currentMatrixPair.skin2_p2_id}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th className="py-1.5 px-1 bg-rose-600 border-r border-rose-700 w-1/4">
-                      <div className="flex flex-col items-center justify-center gap-0.5">
-                        <div className="flex items-center gap-1">
-                          <span>1.Skin 4</span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyMatrixCol(currentMatrixPair, 's1_4', `1.Skin 4 (${currentMatrixPair?.skin4_p1_id || ''})`)}
-                            title="Copy cột 1.Skin 4"
-                            className="hover:opacity-80 p-0.5"
-                          >
-                            <Copy size={10} />
-                          </button>
-                        </div>
-                        {currentMatrixPair?.skin4_p1_id && (
-                          <span className="text-[10px] font-mono text-rose-200 font-semibold">{currentMatrixPair.skin4_p1_id}</span>
-                        )}
-                      </div>
-                    </th>
-                    <th className="py-1.5 px-1 bg-rose-600 w-1/4">
-                      <div className="flex flex-col items-center justify-center gap-0.5">
-                        <div className="flex items-center gap-1">
-                          <span>2.Skin 4</span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyMatrixCol(currentMatrixPair, 's2_4', `2.Skin 4 (${currentMatrixPair?.skin4_p2_id || ''})`)}
-                            title="Copy cột 2.Skin 4"
-                            className="hover:opacity-80 p-0.5"
-                          >
-                            <Copy size={10} />
-                          </button>
-                        </div>
-                        {currentMatrixPair?.skin4_p2_id && (
-                          <span className="text-[10px] font-mono text-rose-200 font-semibold">{currentMatrixPair.skin4_p2_id}</span>
-                        )}
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {currentMatrixPair?.grid_rows?.length ? (
-                    currentMatrixPair.grid_rows.map((grow, gIdx) => (
-                      <tr key={gIdx} className="hover:bg-slate-50 transition-colors">
-                        <td
-                          className="py-1 px-1 border-r border-slate-100 text-sky-950 hover:bg-sky-50 cursor-pointer font-bold"
-                          onClick={() => grow.s1_2 && handleQuickCopyCell(grow.s1_2)}
-                          title="Bấm để copy ID cuộn"
-                        >
-                          {grow.s1_2 || ''}
-                        </td>
-                        <td
-                          className="py-1 px-1 border-r border-slate-100 text-sky-950 hover:bg-sky-50 cursor-pointer font-bold"
-                          onClick={() => grow.s2_2 && handleQuickCopyCell(grow.s2_2)}
-                          title="Bấm để copy ID cuộn"
-                        >
-                          {grow.s2_2 || ''}
-                        </td>
-                        <td
-                          className="py-1 px-1 border-r border-slate-100 text-rose-950 hover:bg-rose-50 cursor-pointer font-bold"
-                          onClick={() => grow.s1_4 && handleQuickCopyCell(grow.s1_4)}
-                          title="Bấm để copy ID cuộn"
-                        >
-                          {grow.s1_4 || ''}
-                        </td>
-                        <td
-                          className="py-1 px-1 text-rose-950 hover:bg-rose-50 cursor-pointer font-bold"
-                          onClick={() => grow.s2_4 && handleQuickCopyCell(grow.s2_4)}
-                          title="Bấm để copy ID cuộn"
-                        >
-                          {grow.s2_4 || ''}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={4} className="py-8 text-center text-slate-400 font-sans text-xs">
-                        {loadingKeHoachMatrix ? 'Đang tải ma trận...' : 'Chưa có cuộn nào trong Plan này'}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Footer info */}
-            <div className="p-2 bg-slate-50 text-[11px] text-slate-500 flex items-center justify-between">
-              <span>{currentMatrixPair?.grid_rows?.length || 0} hàng cuộn</span>
-              <span className="text-[10px] text-slate-400">Click mã cuộn hoặc ô vàng để copy</span>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -30,6 +30,8 @@ export default function DataSourceSheet({
   onStartEdit,
   onCommitEdit,
   onCancelEdit,
+  onCopySelectedIds,
+  idColumnName,
   stats,
   loadingDataSource,
   onLoadDefault,
@@ -143,6 +145,8 @@ export default function DataSourceSheet({
             onStartEdit={onStartEdit}
             onCommitEdit={onCommitEdit}
             onCancelEdit={onCancelEdit}
+            onCopySelectedIds={onCopySelectedIds}
+            idColumnName={idColumnName}
           />
         )}
       </div>

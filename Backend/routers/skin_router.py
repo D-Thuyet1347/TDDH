@@ -41,6 +41,12 @@ from services.skin_service import (
     export_skin_ke_hoach_excel,
     get_skin_hrc2_coils_by_ke_hoach,
     assign_skin_hrc2_ke_hoach_batch,
+    get_rules_skin_data,
+    add_grade_to_rules_skin,
+    remove_grade_from_rules_skin,
+    save_elongation_rules,
+    reset_rules_skin_defaults,
+    get_skin_bao_cao_data,
     SHEET_REGISTRY,
     SKIN_HRC2_COLUMNS,
     DATA_SOURCE_COLUMNS,
@@ -186,6 +192,7 @@ async def import_paste_rows_endpoint(sheet_name: str, req: PasteRowsRequest):
     except HTTPException:
         raise
     except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -201,6 +208,7 @@ async def paste_column_endpoint(sheet_name: str, req: PasteColumnRequest):
     except HTTPException:
         raise
     except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -211,6 +219,7 @@ async def copy_po_hsm_to_skin_endpoint():
         res = copy_po_hsm_to_skin()
         return res
     except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -231,6 +240,7 @@ async def transfer_to_skin_endpoint(req: TransferToSkinRequest):
         res = transfer_data_source_to_skin(row_ids=req.row_ids)
         return res
     except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -302,6 +312,7 @@ async def undo_sheet_action_endpoint(sheet_name: str):
     except HTTPException:
         raise
     except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -364,6 +375,7 @@ async def fetch_ghc_endpoint(req: FetchGhcRequest | None = None):
         res = await asyncio.to_thread(fetch_and_update_ghc_for_data_source, row_ids, only_missing)
         return res
     except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         import traceback
@@ -412,6 +424,7 @@ async def save_pivot_block_endpoint(req: SavePivotBlockRequest):
         res = save_pivot_block(block_type=req.block_type, items=req.items, clear_first=req.clear_first)
         return res
     except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -450,6 +463,8 @@ class GenerateKeHoachRequest(BaseModel):
     skin4_target: int = 50
     update_source: bool = True
     today_date: str | None = None
+    prod_from_date: str | None = None
+    prod_to_date: str | None = None
 
 @router.post("/ke-hoach/generate")
 async def generate_ke_hoach_endpoint(req: GenerateKeHoachRequest | None = None):
@@ -458,9 +473,19 @@ async def generate_ke_hoach_endpoint(req: GenerateKeHoachRequest | None = None):
         s4 = req.skin4_target if req else 50
         upd = req.update_source if req else True
         td = req.today_date if req else None
-        res = generate_skin_ke_hoach(skin2_target=s2, skin4_target=s4, update_source=upd, today_date_str=td)
+        pfd = req.prod_from_date if req else None
+        ptd = req.prod_to_date if req else None
+        res = generate_skin_ke_hoach(
+            skin2_target=s2,
+            skin4_target=s4,
+            update_source=upd,
+            today_date_str=td,
+            prod_from_date_str=pfd,
+            prod_to_date_str=ptd,
+        )
         return res
     except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -506,9 +531,82 @@ async def assign_hrc2_ke_hoach_batch_endpoint(req: AssignKeHoachBatchRequest):
         res = assign_skin_hrc2_ke_hoach_batch(coil_ids=req.coil_ids, ke_hoach_val=req.ke_hoach, limit=req.limit)
         return res
     except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class RuleGradeAddRequest(BaseModel):
+    group: str
+    grades: list[str]
+
+
+class RuleGradeRemoveRequest(BaseModel):
+    group: str
+    grade: str
+
+
+class RuleElongationSaveRequest(BaseModel):
+    elongation_table: list[dict[str, Any]]
+
+
+@router.get("/rules")
+async def get_rules_skin_endpoint():
+    try:
+        return get_rules_skin_data()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rules/add-grade")
+async def add_rule_grade_endpoint(req: RuleGradeAddRequest):
+    try:
+        return add_grade_to_rules_skin(group_name=req.group, grades=req.grades)
+    except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rules/remove-grade")
+async def remove_rule_grade_endpoint(req: RuleGradeRemoveRequest):
+    try:
+        return remove_grade_from_rules_skin(group_name=req.group, grade=req.grade)
+    except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rules/save-elongation")
+async def save_rule_elongation_endpoint(req: RuleElongationSaveRequest):
+    try:
+        return save_elongation_rules(elongation_rows=req.elongation_table)
+    except ValueError as ve:
+        print(f"[SKIN 400] {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rules/reset-defaults")
+async def reset_rule_defaults_endpoint():
+    try:
+        return reset_rules_skin_defaults()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bao-cao")
+async def get_skin_bao_cao_endpoint():
+    try:
+        return get_skin_bao_cao_data()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 

@@ -5,22 +5,21 @@ import {
   Download,
   Plus,
   Trash2,
-  Calendar,
   Sparkles,
-  RotateCcw,
   Undo2,
   ClipboardPaste,
   Columns,
   RefreshCw,
-  ExternalLink,
   LoaderCircle,
-  FileSpreadsheet,
+  Copy,
+  Pencil,
+  Save,
+  X,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import QcLayout from '../components/QcLayout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Badge } from '../components/ui/badge';
 
 // Modular Constants & Utilities
 import {
@@ -41,6 +40,8 @@ import {
   HangVotSheet,
   PoSkinSheet,
   GenericSkinSheet,
+  RulesSkinSheet,
+  BaoCaoSkinSheet,
 } from './skin/sheets';
 
 // Modular Modal Components
@@ -68,7 +69,6 @@ import {
   transferDataSourceToSkin,
   deleteSkinRowsBatch,
   updateSkinRow,
-  deleteSkinRow,
   clearSkinSheet,
   getSkinStats,
   getSkinUndoInfo,
@@ -77,7 +77,6 @@ import {
   autoLinkSkinPoNew,
   generateSkinGetData,
   getExportSkinGetDataUrl,
-  fetchSkinGhc,
   collectSkinGetDataPo,
   recalculateSkinGetDataPo,
   getSkinPivotData,
@@ -97,7 +96,7 @@ export default function SkinPage() {
   const [activeSheet, setActiveSheet] = useState('SKIN_HRC2');
   const [rows, setRows] = useState([]);
   const [totalRows, setTotalRows] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [stats, setStats] = useState(null);
@@ -113,7 +112,6 @@ export default function SkinPage() {
   // Month selection for loading data
   const currentMonth = new Date().getMonth() + 1;
   const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
-  const [selectedMonth, setSelectedMonth] = useState(String(currentMonth));
 
   // Selection & Active Row
   const [activeRowId, setActiveRowId] = useState(null);
@@ -135,11 +133,10 @@ export default function SkinPage() {
   const [pivotPasteTarget, setPivotPasteTarget] = useState('coil');
   const [showGetDataPoModal, setShowGetDataPoModal] = useState(false);
   const [getDataPoType, setGetDataPoType] = useState('skin');
-  const [showCopyGetDataMenu, setShowCopyGetDataMenu] = useState(false);
 
   // Loading States
   const [loadingDataSource, setLoadingDataSource] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [, setUploading] = useState(false);
   const [pastingSubmitting, setPastingSubmitting] = useState(false);
   const [addingBatch, setAddingBatch] = useState(false);
   const [transferring, setTransferring] = useState(false);
@@ -149,7 +146,6 @@ export default function SkinPage() {
   const [recalculating, setRecalculating] = useState(false);
   const [autoLinkingPoNew, setAutoLinkingPoNew] = useState(false);
   const [generatingGetData, setGeneratingGetData] = useState(false);
-  const [fetchingGhc, setFetchingGhc] = useState(false);
   const [collectingGetDataPo, setCollectingGetDataPo] = useState(false);
   const [uploadingHangVotExcel, setUploadingHangVotExcel] = useState(false);
   const [syncingHangVot, setSyncingHangVot] = useState(false);
@@ -160,10 +156,16 @@ export default function SkinPage() {
   const [undoing, setUndoing] = useState(false);
 
   // Kế hoạch State
-  const [skin2Target, setSkin2Target] = useState(45);
-  const [skin4Target, setSkin4Target] = useState(45);
+  const [skin2Target, setSkin2Target] = useState(50);
+  const [skin4Target, setSkin4Target] = useState(50);
+  const [prodFromDate, setProdFromDate] = useState('');
+  const [prodToDate, setProdToDate] = useState('');
   const [runningKeHoach, setRunningKeHoach] = useState(false);
   const [keHoachMatrixData, setKeHoachMatrixData] = useState({ matrix_pairs: [], plans_list: [] });
+  const [unmatchedGrades, setUnmatchedGrades] = useState([]);
+  const [editingRow, setEditingRow] = useState(null);
+  const [editingRowValues, setEditingRowValues] = useState({});
+  const [savingRowEdit, setSavingRowEdit] = useState(false);
   const [loadingKeHoachMatrix, setLoadingKeHoachMatrix] = useState(false);
 
   // SKIN_HRC2 Kế hoạch by Date Panel State (1,000 coils limit)
@@ -177,7 +179,7 @@ export default function SkinPage() {
 
   // PivotTable State
   const [pivotData, setPivotData] = useState({ coil_reqs: [], po_reqs: [], priorities: [] });
-  const [loadingPivotData, setLoadingPivotData] = useState(false);
+  const [, setLoadingPivotData] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -196,6 +198,10 @@ export default function SkinPage() {
 
   // Fetch undo info
   const fetchUndoInfo = useCallback(async () => {
+    if (activeSheet === 'BAO_CAO_SKIN') {
+      setUndoInfo({ can_undo: false, action_description: null });
+      return;
+    }
     try {
       const res = await getSkinUndoInfo({ sheetName: activeSheet });
       setUndoInfo(res || { can_undo: false, action_description: null });
@@ -206,6 +212,12 @@ export default function SkinPage() {
 
   // Load rows for active sheet (tải toàn bộ dữ liệu vào memory, filter chạy mượt trên client)
   const fetchRows = useCallback(async () => {
+    if (activeSheet === 'BAO_CAO_SKIN') {
+      setRows([]);
+      setTotalRows(0);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await getSkinSheetRows({
@@ -356,7 +368,11 @@ export default function SkinPage() {
         skin2Target: Number(skin2Target) || 45,
         skin4Target: Number(skin4Target) || 45,
         updateSource: true,
+        todayDate: null,
+        prodFromDate: prodFromDate || null,
+        prodToDate: prodToDate || null,
       });
+      setUnmatchedGrades(res.unmatched_grades || []);
       successToast(res.message || 'Đã chạy lập kế hoạch Skin thành công!');
       await fetchRows();
       await fetchStats();
@@ -913,26 +929,41 @@ export default function SkinPage() {
     }
   };
 
-  // Delete & Clear Handlers
-  const handleDeleteRow = async (rowId) => {
-    const idToDelete = rowId || activeRowId;
-    if (!idToDelete) return;
-    if (!window.confirm('Bạn có chắc muốn xóa dòng này?')) return;
-    try {
-      await deleteSkinRow({ sheetName: activeSheet, rowId: idToDelete });
-      setRows((prev) => prev.filter((r) => r.id !== idToDelete));
-      setTotalRows((t) => Math.max(0, t - 1));
-      if (activeRowId === idToDelete) setActiveRowId(null);
-      setSelectedRowIds((prev) => {
-        const next = new Set(prev);
-        next.delete(idToDelete);
-        return next;
-      });
-      successToast('Đã xóa dòng thành công!');
-      await fetchUndoInfo();
-    } catch (err) {
-      errorToast('Lỗi xóa dòng: ' + err.message);
+  // Xác định cột ID phù hợp cho sheet hiện tại
+  const currentSheetColumns = useMemo(() => getSheetColumns(activeSheet), [activeSheet]);
+
+  const activeIdColumnName = useMemo(() => {
+    if (currentSheetColumns.includes('ID Cuộn Bó')) return 'ID Cuộn Bó';
+    if (currentSheetColumns.includes('ID XỬ LÝ')) return 'ID XỬ LÝ';
+    if (currentSheetColumns.includes('ID GỐC')) return 'ID GỐC';
+    if (currentSheetColumns.includes('Mã cuộn')) return 'Mã cuộn';
+    const found = currentSheetColumns.find((c) => /id/i.test(c));
+    return found || currentSheetColumns[0] || 'ID';
+  }, [currentSheetColumns]);
+
+  // Sao chép toàn bộ ID của các dòng đã tick chọn qua checkbox STT
+  const handleCopySelectedIds = (targetColName) => {
+    if (!selectedRowIds.size) {
+      errorToast('Vui lòng tick chọn ít nhất 1 dòng ở cột STT để sao chép!');
+      return;
     }
+    const colToUse = targetColName || activeIdColumnName;
+    const selectedRows = filteredAndSortedRows.filter((r) => selectedRowIds.has(r.id));
+    const ids = selectedRows
+      .map((r) => String(r.values?.[colToUse] ?? '').trim())
+      .filter(Boolean);
+
+    if (!ids.length) {
+      errorToast(`Không tìm thấy dữ liệu trong cột "${colToUse}" của các dòng đã chọn!`);
+      return;
+    }
+
+    const textToCopy = ids.join('\n');
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      successToast(`Đã sao chép ${nf(ids.length)} mã vào bộ nhớ tạm (cột: ${colToUse})!`);
+    }).catch((err) => {
+      errorToast('Không thể sao chép vào bộ nhớ tạm: ' + err.message);
+    });
   };
 
   const handleBatchDelete = async () => {
@@ -1008,6 +1039,45 @@ export default function SkinPage() {
   const handleCancelEdit = () => {
     setEditingCell(null);
     setEditValue('');
+  };
+
+  const handleOpenEditRow = (row) => {
+    if (!row) return;
+    setEditingRow(row);
+    setEditingRowValues({ ...(row.values || {}) });
+  };
+
+  const handleSaveEditRow = async (e) => {
+    e?.preventDefault();
+    if (!editingRow) return;
+    const cleaned = {};
+    columns.forEach((col) => {
+      let val = editingRowValues[col] ?? '';
+      if (typeof val === 'string') val = val.trim();
+      if (activeSheet === 'SKIN_HRC2' && col === 'Kế hoạch') {
+        val = formatKeHoachValue(String(val));
+      }
+      cleaned[col] = val;
+    });
+    try {
+      setSavingRowEdit(true);
+      await updateSkinRow({
+        sheetName: activeSheet,
+        rowId: editingRow.id,
+        values: cleaned,
+      });
+      setRows((prev) =>
+        prev.map((r) => (r.id === editingRow.id ? { ...r, values: { ...r.values, ...cleaned } } : r))
+      );
+      await fetchUndoInfo();
+      successToast('Đã lưu thay đổi dòng!');
+      setEditingRow(null);
+      setEditingRowValues({});
+    } catch (err) {
+      errorToast('Lỗi lưu dòng: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setSavingRowEdit(false);
+    }
   };
 
   // Export Sheet to Excel (.xlsx)
@@ -1240,6 +1310,9 @@ export default function SkinPage() {
       onStartEdit: handleStartEdit,
       onCommitEdit: handleCommitEdit,
       onCancelEdit: handleCancelEdit,
+      onCopySelectedIds: handleCopySelectedIds,
+      idColumnName: activeIdColumnName,
+      onEditRow: handleOpenEditRow,
     };
 
     switch (activeSheet) {
@@ -1268,11 +1341,17 @@ export default function SkinPage() {
             setSkin2Target={setSkin2Target}
             skin4Target={skin4Target}
             setSkin4Target={setSkin4Target}
+            prodFromDate={prodFromDate}
+            setProdFromDate={setProdFromDate}
+            prodToDate={prodToDate}
+            setProdToDate={setProdToDate}
             runningKeHoach={runningKeHoach}
             onRunKeHoach={handleRunKeHoach}
             keHoachMatrixData={keHoachMatrixData}
             loadingKeHoachMatrix={loadingKeHoachMatrix}
             onRefreshMatrix={fetchKeHoachMatrix}
+            unmatchedGrades={unmatchedGrades}
+            onGoToRulesSkin={() => handleSelectSheet('RULES_SKIN')}
           />
         );
       case 'DATA_SOURCE':
@@ -1325,6 +1404,10 @@ export default function SkinPage() {
             onCreateNewPo={handleAutoLinkPoNew}
           />
         );
+      case 'RULES_SKIN':
+        return <RulesSkinSheet onRulesChanged={fetchStats} />;
+      case 'BAO_CAO_SKIN':
+        return <BaoCaoSkinSheet />;
       default:
         return (
           <GenericSkinSheet
@@ -1422,8 +1505,8 @@ export default function SkinPage() {
                   title={`Sheet ${tab.label} (${nf(statCount)} dòng)`}
                   className={`group relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer select-none ${
                     isCurrent
-                      ? 'bg-[#0e5374] text-white shadow-sm ring-2 ring-[#0e5374]/30 font-bold scale-[1.02]'
-                      : 'bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/90 font-medium'
+                      ? `${tab.activeClass || 'bg-[#0e5374] text-white shadow-sm ring-2 ring-[#0e5374]/30'} font-bold scale-[1.02]`
+                      : `${tab.inactiveClass || 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/90'} font-medium`
                   }`}
                 >
                   <span className="tracking-tight">{tab.label}</span>
@@ -1431,7 +1514,7 @@ export default function SkinPage() {
                     className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold transition-colors ${
                       isCurrent
                         ? 'bg-white/20 text-white'
-                        : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'
+                        : tab.badgeClass || 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'
                     }`}
                   >
                     {isFiltered ? `${nf(filteredAndSortedRows.length)}/${nf(count)}` : nf(count)}
@@ -1607,16 +1690,56 @@ export default function SkinPage() {
               </Button>
             </div>
 
-            {/* Batch Delete if rows selected */}
-            {selectedRowIds.size > 0 && (
+            {/* Quick Edit Selected/Active Row Button */}
+            {(activeRowId || selectedRowIds.size > 0) && activeSheet !== 'RULES_SKIN' && (
               <Button
                 type="button"
-                onClick={handleBatchDelete}
-                className="h-8 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-2xs"
+                variant="outline"
+                onClick={() => {
+                  const targetId = activeRowId || Array.from(selectedRowIds)[0];
+                  const targetRow = rows.find((r) => r.id === targetId);
+                  if (targetRow) handleOpenEditRow(targetRow);
+                }}
+                className="h-8 rounded-xl text-xs font-bold border-blue-300 text-blue-700 hover:bg-blue-50"
+                title="Mở form chỉnh sửa dòng đang chọn"
               >
-                <Trash2 size={13} className="mr-1" />
-                Xóa ({selectedRowIds.size})
+                <Pencil size={13} className="mr-1" /> Edit
               </Button>
+            )}
+
+            {/* Quick Copy Selected IDs & Batch Delete if rows selected */}
+            {selectedRowIds.size > 0 && (
+              <>
+                <Button
+                  type="button"
+                  onClick={() => handleCopySelectedIds()}
+                  className="h-8 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xs"
+                  title={`Sao chép toàn bộ mã ${activeIdColumnName} của ${selectedRowIds.size} dòng đã chọn (Phím tắt: Ctrl+C)`}
+                >
+                  <Copy size={13} className="mr-1" />
+                  Sao chép {activeIdColumnName} ({selectedRowIds.size})
+                </Button>
+                {activeSheet === 'DATA_SOURCE' && (
+                  <Button
+                    type="button"
+                    onClick={() => handleCopySelectedIds('ID GỐC')}
+                    variant="outline"
+                    className="h-8 rounded-xl text-xs font-bold border-emerald-300 text-emerald-800 hover:bg-emerald-50 shadow-2xs"
+                    title={`Sao chép mã ID GỐC của ${selectedRowIds.size} dòng đã chọn`}
+                  >
+                    <Copy size={13} className="mr-1 text-emerald-600" />
+                    Sao chép ID GỐC ({selectedRowIds.size})
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  onClick={handleBatchDelete}
+                  className="h-8 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-2xs"
+                >
+                  <Trash2 size={13} className="mr-1" />
+                  Xóa ({selectedRowIds.size})
+                </Button>
+              </>
             )}
 
             {/* Clear Sheet */}
@@ -1710,6 +1833,72 @@ export default function SkinPage() {
           onConfirmSave={handleConfirmPivotPaste}
           saving={savingPivotBlock}
         />
+
+        {editingRow && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-[1px] p-4">
+            <form
+              onSubmit={handleSaveEditRow}
+              className="w-full max-w-3xl max-h-[88vh] flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-slate-50">
+                <div className="flex items-center gap-2">
+                  <Pencil size={16} className="text-blue-600" />
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Chỉnh sửa dòng — {activeSheet}
+                    {editingRowValues[activeIdColumnName] ? ` (${editingRowValues[activeIdColumnName]})` : ''}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingRow(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {columns.map((col) => (
+                  <div key={col} className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-slate-700">{col}</label>
+                    <input
+                      type="text"
+                      value={editingRowValues[col] ?? ''}
+                      onChange={(e) =>
+                        setEditingRowValues((prev) => ({ ...prev, [col]: e.target.value }))
+                      }
+                      className="h-8 px-2.5 text-xs rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none text-slate-900"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditingRow(null)}
+                  disabled={savingRowEdit}
+                  className="h-8 text-xs font-bold"
+                >
+                  Hủy
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={savingRowEdit}
+                  className="h-8 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {savingRowEdit ? (
+                    <LoaderCircle size={13} className="mr-1.5 animate-spin" />
+                  ) : (
+                    <Save size={13} className="mr-1.5" />
+                  )}
+                  Save
+                </Button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
     </QcLayout>
   );

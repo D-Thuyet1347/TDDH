@@ -42,6 +42,8 @@ export default function SkinHrc2Sheet({
   onStartEdit,
   onCommitEdit,
   onCancelEdit,
+  onCopySelectedIds,
+  idColumnName,
   showHrc2DatePanel,
   setShowHrc2DatePanel,
   hrc2SelectedDate,
@@ -187,6 +189,8 @@ export default function SkinHrc2Sheet({
             onCommitEdit={onCommitEdit}
             onCancelEdit={onCancelEdit}
             renderCustomCell={renderCustomCell}
+            onCopySelectedIds={onCopySelectedIds}
+            idColumnName={idColumnName}
           />
         </div>
 

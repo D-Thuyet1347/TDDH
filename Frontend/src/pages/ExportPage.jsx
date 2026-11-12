@@ -210,7 +210,7 @@ export default function ExportPage() {
   const [targetReportId, setTargetReportId] = useState(DEFAULT_REPORT_ID);
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
-  const [selectedMonths, setSelectedMonths] = useState([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  const [selectedMonths, setSelectedMonths] = useState(() => [new Date().getMonth() + 1]);
   const [includeAggregate, setIncludeAggregate] = useState(true);
   const [exportTime, setExportTime] = useState('08:00');
   const [isCustomRange, setIsCustomRange] = useState(false);
@@ -357,11 +357,15 @@ export default function ExportPage() {
         if (!controller.signal.aborted) {
           const schedule = result.schedule;
           setAutoSchedule(schedule);
-          if (schedule?.selected_months?.length) {
-            setSelectedMonths(schedule.selected_months);
-          } else if (schedule?.month && schedule.month !== 'all' && schedule.month !== 'custom') {
-            const m = Number(schedule.month);
-            if (!isNaN(m)) setSelectedMonths([m]);
+          if (schedule?.enabled) {
+            if (schedule?.selected_months?.length) {
+              setSelectedMonths(schedule.selected_months);
+            } else if (schedule?.month && schedule.month !== 'all' && schedule.month !== 'custom') {
+              const m = Number(schedule.month);
+              if (!isNaN(m)) setSelectedMonths([m]);
+            }
+          } else {
+            setSelectedMonths([new Date().getMonth() + 1]);
           }
           if (schedule?.include_aggregate !== undefined) {
             setIncludeAggregate(Boolean(schedule.include_aggregate));

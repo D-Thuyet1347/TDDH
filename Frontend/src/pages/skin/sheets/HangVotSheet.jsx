@@ -28,6 +28,8 @@ export default function HangVotSheet({
   onStartEdit,
   onCommitEdit,
   onCancelEdit,
+  onCopySelectedIds,
+  idColumnName,
   syncingHangVot,
   onSyncHangVot,
   onOpenUploadModal,
@@ -98,6 +100,8 @@ export default function HangVotSheet({
             onStartEdit={onStartEdit}
             onCommitEdit={onCommitEdit}
             onCancelEdit={onCancelEdit}
+            onCopySelectedIds={onCopySelectedIds}
+            idColumnName={idColumnName}
           />
         )}
       </div>

@@ -327,12 +327,14 @@ export const uploadSkinHangVotExcel = (file, signal) => {
 export const syncSkinHangVot = ({ customPath = null, signal } = {}) =>
   request(axios.post(`${SKIN_API_URL}/hang-vot/sync`, { custom_path: customPath }, { signal }));
 
-export const generateSkinKeHoach = ({ skin2Target = 50, skin4Target = 50, updateSource = true, todayDate = null, signal } = {}) =>
+export const generateSkinKeHoach = ({ skin2Target = 50, skin4Target = 50, updateSource = true, todayDate = null, prodFromDate = null, prodToDate = null, signal } = {}) =>
   request(axios.post(`${SKIN_API_URL}/ke-hoach/generate`, {
     skin2_target: skin2Target,
     skin4_target: skin4Target,
     update_source: updateSource,
     today_date: todayDate,
+    prod_from_date: prodFromDate,
+    prod_to_date: prodToDate,
   }, { signal }));
 
 export const getSkinKeHoachMatrix = ({ signal } = {}) =>
@@ -346,6 +348,25 @@ export const getSkinHrc2CoilsByKeHoach = ({ date = '', limit = 1000, signal } = 
 
 export const assignSkinHrc2KeHoachBatch = ({ coilIds = [], keHoach = '', limit = 1000, signal } = {}) =>
   request(axios.post(`${SKIN_API_URL}/hrc2/ke-hoach-assign`, { coil_ids: coilIds, ke_hoach: keHoach, limit }, { signal }));
+
+export const getSkinRules = ({ signal } = {}) =>
+  request(axios.get(`${SKIN_API_URL}/rules`, { signal }));
+
+export const addSkinRuleGrade = ({ group, grades, signal } = {}) =>
+  request(axios.post(`${SKIN_API_URL}/rules/add-grade`, { group, grades }, { signal }));
+
+export const removeSkinRuleGrade = ({ group, grade, signal } = {}) =>
+  request(axios.post(`${SKIN_API_URL}/rules/remove-grade`, { group, grade }, { signal }));
+
+export const saveSkinElongationRules = ({ elongationTable, signal } = {}) =>
+  request(axios.post(`${SKIN_API_URL}/rules/save-elongation`, { elongation_table: elongationTable }, { signal }));
+
+export const resetSkinRulesDefaults = ({ signal } = {}) =>
+  request(axios.post(`${SKIN_API_URL}/rules/reset-defaults`, {}, { signal }));
+
+export const getSkinBaoCao = ({ signal } = {}) =>
+  request(axios.get(`${SKIN_API_URL}/bao-cao`, { signal }));
+
 
 
 

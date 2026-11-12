@@ -8,6 +8,7 @@ export const PASTE_FORM_COLUMNS = [
   'Ca',
   'Vị trí',
   'Order',
+  'Mác phôi',
 ];
 
 export const SKIN_HRC2_COLUMNS = [
@@ -27,6 +28,7 @@ export const SKIN_HRC2_COLUMNS = [
   'Ca',
   'Vị trí',
   'Order',
+  'Mác phôi',
   'Thickness',
   'DVKTKH',
   'Chỉ định Skin',
@@ -177,18 +179,129 @@ export const KE_HOACH_COLUMNS = [
   'Ca',
 ];
 
+export const RULES_SKIN_COLUMNS = [
+  'Loại Rule',
+  'Nhóm / GHC',
+  'Mác phôi',
+  '1.2',
+  '1.5',
+  '2.0',
+  '2.5',
+  '3.0',
+  '3.5',
+  '4.0',
+  '4.5',
+  '5.0',
+  '5.5',
+  '6.0',
+  'Ghi chú',
+];
+
 export const SHEET_TABS = [
-  { id: 'SKIN_HRC2', label: 'SKIN_HRC2', statKey: 'skin_hrc2_count' },
-  { id: 'DATA_SOURCE', label: 'DATA_SOURCE', statKey: 'data_source_count' },
-  { id: 'PO_HSM', label: 'PO_HSM', statKey: 'po_hsm_count' },
-  { id: 'PO_SKIN', label: 'PO_SKIN', statKey: 'po_skin_count' },
-  { id: 'DATA_MES', label: 'Data MES', statKey: 'data_mes_count' },
-  { id: 'GET_DATA', label: 'Get Data', statKey: 'get_data_count' },
-  { id: 'CHECK_DATA_SKIN', label: 'Check_data_SKIN', statKey: 'check_data_skin_count' },
-  { id: 'GET_DATA_PO', label: 'Get_data_PO', statKey: 'get_data_po_count' },
-  { id: 'PIVOT_TABLE', label: 'PivotTable', statKey: 'pivot_table_count' },
-  { id: 'HANG_VOT', label: 'Hàng Vớt', statKey: 'hang_vot_count' },
-  { id: 'KE_HOACH', label: 'Kế hoạch', statKey: 'ke_hoach_count' },
+  {
+    id: 'SKIN_HRC2',
+    label: 'SKIN_HRC2',
+    statKey: 'skin_hrc2_count',
+    activeClass: 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-600/30',
+    inactiveClass: 'bg-blue-50/80 text-blue-800 border border-blue-200 hover:bg-blue-100',
+    badgeClass: 'bg-blue-100 text-blue-800 group-hover:bg-blue-200',
+  },
+  {
+    id: 'DATA_SOURCE',
+    label: 'DATA_SOURCE',
+    statKey: 'data_source_count',
+    activeClass: 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-600/30',
+    inactiveClass: 'bg-indigo-50/80 text-indigo-800 border border-indigo-200 hover:bg-indigo-100',
+    badgeClass: 'bg-indigo-100 text-indigo-800 group-hover:bg-indigo-200',
+  },
+  {
+    id: 'PO_HSM',
+    label: 'PO_HSM',
+    statKey: 'po_hsm_count',
+    activeClass: 'bg-violet-600 text-white shadow-sm ring-2 ring-violet-600/30',
+    inactiveClass: 'bg-violet-50/80 text-violet-800 border border-violet-200 hover:bg-violet-100',
+    badgeClass: 'bg-violet-100 text-violet-800 group-hover:bg-violet-200',
+  },
+  {
+    id: 'PO_SKIN',
+    label: 'PO_SKIN',
+    statKey: 'po_skin_count',
+    activeClass: 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-600/30',
+    inactiveClass: 'bg-purple-50/80 text-purple-800 border border-purple-200 hover:bg-purple-100',
+    badgeClass: 'bg-purple-100 text-purple-800 group-hover:bg-purple-200',
+  },
+  {
+    id: 'DATA_MES',
+    label: 'Data MES',
+    statKey: 'data_mes_count',
+    activeClass: 'bg-cyan-700 text-white shadow-sm ring-2 ring-cyan-700/30',
+    inactiveClass: 'bg-cyan-50/80 text-cyan-800 border border-cyan-200 hover:bg-cyan-100',
+    badgeClass: 'bg-cyan-100 text-cyan-800 group-hover:bg-cyan-200',
+  },
+  {
+    id: 'GET_DATA',
+    label: 'Get Data',
+    statKey: 'get_data_count',
+    activeClass: 'bg-teal-600 text-white shadow-sm ring-2 ring-teal-600/30',
+    inactiveClass: 'bg-teal-50/80 text-teal-800 border border-teal-200 hover:bg-teal-100',
+    badgeClass: 'bg-teal-100 text-teal-800 group-hover:bg-teal-200',
+  },
+  {
+    id: 'CHECK_DATA_SKIN',
+    label: 'Check_data_SKIN',
+    statKey: 'check_data_skin_count',
+    activeClass: 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-600/30',
+    inactiveClass: 'bg-emerald-50/80 text-emerald-800 border border-emerald-200 hover:bg-emerald-100',
+    badgeClass: 'bg-emerald-100 text-emerald-800 group-hover:bg-emerald-200',
+  },
+  {
+    id: 'GET_DATA_PO',
+    label: 'Get_data_PO',
+    statKey: 'get_data_po_count',
+    activeClass: 'bg-sky-600 text-white shadow-sm ring-2 ring-sky-600/30',
+    inactiveClass: 'bg-sky-50/80 text-sky-800 border border-sky-200 hover:bg-sky-100',
+    badgeClass: 'bg-sky-100 text-sky-800 group-hover:bg-sky-200',
+  },
+  {
+    id: 'PIVOT_TABLE',
+    label: 'PivotTable',
+    statKey: 'pivot_table_count',
+    activeClass: 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-600/30',
+    inactiveClass: 'bg-amber-50/80 text-amber-800 border border-amber-200 hover:bg-amber-100',
+    badgeClass: 'bg-amber-100 text-amber-800 group-hover:bg-amber-200',
+  },
+  {
+    id: 'HANG_VOT',
+    label: 'Hàng Vớt',
+    statKey: 'hang_vot_count',
+    activeClass: 'bg-orange-600 text-white shadow-sm ring-2 ring-orange-600/30',
+    inactiveClass: 'bg-orange-50/80 text-orange-800 border border-orange-200 hover:bg-orange-100',
+    badgeClass: 'bg-orange-100 text-orange-800 group-hover:bg-orange-200',
+  },
+  {
+    id: 'KE_HOACH',
+    label: 'Kế hoạch',
+    statKey: 'ke_hoach_count',
+    activeClass: 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-600/30',
+    inactiveClass: 'bg-rose-50/80 text-rose-800 border border-rose-200 hover:bg-rose-100',
+    badgeClass: 'bg-rose-100 text-rose-800 group-hover:bg-rose-200',
+  },
+  {
+    id: 'BAO_CAO_SKIN',
+    label: 'Báo cáo SKIN',
+    statKey: null,
+    activeClass: 'bg-fuchsia-600 text-white shadow-sm ring-2 ring-fuchsia-600/30',
+    inactiveClass: 'bg-fuchsia-50/80 text-fuchsia-800 border border-fuchsia-200 hover:bg-fuchsia-100',
+    badgeClass: 'bg-fuchsia-100 text-fuchsia-800 group-hover:bg-fuchsia-200',
+  },
+  {
+    id: 'RULES_SKIN',
+    label: 'Rules_SKIN',
+    statKey: 'rules_skin_count',
+    activeClass: 'bg-slate-700 text-white shadow-sm ring-2 ring-slate-700/30',
+    inactiveClass: 'bg-slate-100 text-slate-800 border border-slate-300 hover:bg-slate-200',
+    badgeClass: 'bg-slate-200 text-slate-800 group-hover:bg-slate-300',
+  },
 ];
 
 export const getSheetColumns = (sheetId) => {
@@ -204,6 +317,7 @@ export const getSheetColumns = (sheetId) => {
     case 'PIVOT_TABLE': return PIVOT_TABLE_COLUMNS;
     case 'HANG_VOT': return HANG_VOT_COLUMNS;
     case 'KE_HOACH': return KE_HOACH_COLUMNS;
+    case 'RULES_SKIN': return RULES_SKIN_COLUMNS;
     default: return SKIN_HRC2_COLUMNS;
   }
 };
@@ -217,6 +331,9 @@ export const PO_HSM_PASTE_COLUMNS = [
   'CW',
   'KH_Loại 1',
   'Mục đích sử dụng',
+  'KL_Chờ SKIN',
+  'KL_Loại 1',
+  'Min_CW',
   'Chỉ định đặc biệt',
 ];
 
@@ -266,9 +383,9 @@ export const getSheetPasteSample = (sheetId) => {
   switch (sheetId) {
     case 'SKIN_HRC2':
       return [
-        '24011501\tTHÉP CUỘN CÁN NÓNG TẨY GỈ PHỦ DẦU\t25480\t2026-10-15\t1\tA-01\tORD-2026-001',
-        '24011502\tTHÉP CUỘN CÁN NÓNG TẨY GỈ PHỦ DẦU\t24320\t2026-10-15\t2\tA-02\tORD-2026-002',
-        '24011503\tTHÉP CUỘN CÁN NÓNG TẨY GỈ PHỦ DẦU\t26100\t2026-10-16\t1\tB-03\tORD-2026-003',
+        '24011501\tTHÉP CUỘN CÁN NÓNG TẨY GỈ PHỦ DẦU\t25480\t2026-10-15\t1\tA-01\tORD-2026-001\tSS400',
+        '24011502\tTHÉP CUỘN CÁN NÓNG TẨY GỈ PHỦ DẦU\t24320\t2026-10-15\t2\tA-02\tORD-2026-002\tSAE1006',
+        '24011503\tTHÉP CUỘN CÁN NÓNG TẨY GỈ PHỦ DẦU\t26100\t2026-10-16\t1\tB-03\tORD-2026-003\tS355JR',
       ].join('\n');
     case 'DATA_SOURCE':
       return [

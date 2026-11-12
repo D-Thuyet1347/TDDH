@@ -293,7 +293,7 @@ def validate_qc_export_input(data: dict) -> dict:
     }
 
 async def ensure_qc_export_report(report_id: str) -> dict:
-    report = query_one("SELECT id, filename, report_type FROM qcreports WHERE id = ?", (report_id,))
+    report = query_one("SELECT id, filename, report_type FROM qc_reports WHERE id = ?", (report_id,))
     if report and report.get("report_type") == "order-demand":
         report = None
     if report:
@@ -303,7 +303,7 @@ async def ensure_qc_export_report(report_id: str) -> dict:
     rid = report_id or QC_REPORT_ID
     now = datetime.utcnow().isoformat()
     execute_write("""
-        INSERT OR REPLACE INTO qcreports (id, filename, original_name, report_type, saved_at, bytes, rows_imported, sheets, created_at, updated_at)
+        INSERT OR REPLACE INTO qc_reports (id, filename, original_name, report_type, saved_at, bytes, rows_imported, sheets, created_at, updated_at)
         VALUES (?, ?, ?, 'qc', ?, 1, 0, '[]', ?, ?)
     """, (rid, filename, filename, now, now, now))
     return {"reportId": rid, "filename": Path(filename).stem}
@@ -886,7 +886,7 @@ def run_qc_export_sync(job: dict):
                 })
                 job["statusMessage"] = f"Xuất dữ liệu thành công ({row_count:,} dòng)!"
 
-            # 3. Import exported file into SQLite Database (qcreports & qcrows)
+            # 3. Import exported file into SQLite Database (qc_reports & qc_rows)
             # Directly updates and overwrites existing database rows for each month and aggregate report
             if is_db_connected() and MONGODB_IMPORT_ROWS:
                 try:
@@ -914,7 +914,7 @@ def run_qc_export_sync(job: dict):
                                 print(f"[QC Export] Successfully overwritten Tháng {m} in database ({rows_cnt:,} rows).")
 
                                 # Clean up any duplicate stub with old format
-                                execute_write("DELETE FROM qcreports WHERE id = ?", (f"export_thang_{m}",))
+                                execute_write("DELETE FROM qc_reports WHERE id = ?", (f"export_thang_{m}",))
                             except Exception as imp_err:
                                 print(f"[QC Export] Error importing Tháng {m} into database: {imp_err}")
 

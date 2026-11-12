@@ -12,7 +12,7 @@ import {
 import { Button } from '../../../components/ui/button';
 
 export const HANG_VOT_SHAREPOINT_URL =
-  "https://hoaphatcomvn-my.sharepoint.com/:x:/g/personal/nguyenvanthuc5_hoaphat_com_vn/IQDPX3Im9eftR4SWQZ2Ztyg3Ae4j-SCH9wqr9kjOEnd-2Sk";
+  "https://hoaphatcomvn-my.sharepoint.com/:x:/g/personal/nguyenvanthuc5_hoaphat_com_vn/IQDPX3Im9eftR4SWQZ2Ztyg3ATAftb8Orch5pC9etZQPgV0?e=SMKORv";
 
 export default function HangVotSourceModal({
   isOpen,

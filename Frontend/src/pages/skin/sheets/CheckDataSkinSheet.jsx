@@ -29,6 +29,8 @@ export default function CheckDataSkinSheet({
   onStartEdit,
   onCommitEdit,
   onCancelEdit,
+  onCopySelectedIds,
+  idColumnName,
   syncingCheckData,
   onSyncCheckData,
 }) {
@@ -99,6 +101,8 @@ export default function CheckDataSkinSheet({
             onStartEdit={onStartEdit}
             onCommitEdit={onCommitEdit}
             onCancelEdit={onCancelEdit}
+            onCopySelectedIds={onCopySelectedIds}
+            idColumnName={idColumnName}
           />
         )}
       </div>

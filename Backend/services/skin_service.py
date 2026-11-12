@@ -8,6 +8,7 @@ from io import BytesIO
 from collections import defaultdict, Counter
 from pathlib import Path
 import openpyxl
+import unicodedata
 
 from config.db import query_one, query_all, execute_write, get_db
 
@@ -28,6 +29,7 @@ SKIN_HRC2_COLUMNS = [
     "Ca",
     "Vị trí",
     "Order",
+    "Mác phôi",
     "Thickness",
     "DVKTKH",
     "Chỉ định Skin",
@@ -178,6 +180,24 @@ KE_HOACH_COLUMNS = [
     "Ca",
 ]
 
+RULES_SKIN_COLUMNS = [
+    "Loại Rule",
+    "Nhóm / GHC",
+    "Mác phôi",
+    "1.2",
+    "1.5",
+    "2.0",
+    "2.5",
+    "3.0",
+    "3.5",
+    "4.0",
+    "4.5",
+    "5.0",
+    "5.5",
+    "6.0",
+    "Ghi chú",
+]
+
 SHEET_REGISTRY = {
     "SKIN_HRC2": {
         "title": "SKIN_HRC2",
@@ -234,10 +254,17 @@ SHEET_REGISTRY = {
         "table": "skin_ke_hoach_rows",
         "columns": KE_HOACH_COLUMNS,
     },
+    "RULES_SKIN": {
+        "title": "Rules_SKIN",
+        "table": "skin_rules_rows",
+        "columns": RULES_SKIN_COLUMNS,
+    },
 }
 
 def normalize_sheet_key(sheet_name: str) -> str:
     s = re.sub(r'[\s_]+', '_', str(sheet_name or '')).strip().upper()
+    if s in ("RULES_SKIN", "RULESSKIN", "RULES", "SKIN_RULES_ROWS"):
+        return "RULES_SKIN"
     if s in ("GET_DATA_PO", "GETDATAPO", "GET_DATA_PO_ROWS"):
         return "GET_DATA_PO"
     if s in ("PIVOT_TABLE", "PIVOTTABLE", "PIVOT", "PIVOT_TABLE_ROWS"):
@@ -288,6 +315,7 @@ def init_skin_tables():
             ("skin_pivot_table_rows", "idx_skin_pivot_table_row_num"),
             ("skin_hang_vot_rows", "idx_skin_hang_vot_row_num"),
             ("skin_ke_hoach_rows", "idx_skin_ke_hoach_row_num"),
+            ("skin_rules_rows", "idx_skin_rules_row_num"),
         ]
 
         for tbl, idx in tables_to_create:
@@ -304,34 +332,34 @@ def init_skin_tables():
 
         # PivotTable dedicated fast tables
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS skin_pivot_coil_req (
+            CREATE TABLE IF NOT EXISTS skin_pivot_coil_reqs (
                 id TEXT PRIMARY KEY,
                 coil_id TEXT NOT NULL,
                 requirement TEXT,
                 updated_at TEXT
             );
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_pivot_coil_id ON skin_pivot_coil_req(coil_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_skin_pivot_coil_reqs_coil_id ON skin_pivot_coil_reqs(coil_id);")
 
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS skin_pivot_po_req (
+            CREATE TABLE IF NOT EXISTS skin_pivot_po_reqs (
                 id TEXT PRIMARY KEY,
                 po TEXT NOT NULL,
                 requirement TEXT,
                 updated_at TEXT
             );
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_pivot_po ON skin_pivot_po_req(po);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_skin_pivot_po_reqs_po ON skin_pivot_po_reqs(po);")
 
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS skin_pivot_priority (
+            CREATE TABLE IF NOT EXISTS skin_pivot_priorities (
                 id TEXT PRIMARY KEY,
                 target_id TEXT NOT NULL,
                 priority TEXT,
                 updated_at TEXT
             );
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_pivot_priority_target ON skin_pivot_priority(target_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_skin_pivot_priorities_target_id ON skin_pivot_priorities(target_id);")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS skin_data_source_rows (
@@ -571,6 +599,544 @@ ELONGATION_LOOKUP = {
     ">500":    {1.2: 1.7, 1.5: 1.6, 2.0: 1.5, 2.5: 1.4, 3.0: 1.3, 3.5: 1.2, 4.0: 1.1, 4.5: 1.1, 5.0: 0.9, 5.5: 0.8, 6.0: 0.7},
 }
 
+GHC_RANGES_ORDER = ["200-249", "250-299", "300-349", "350-399", "400-449", "450-499", ">500"]
+THICKNESS_STEPS_ORDER = [1.2, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
+
+DEFAULT_HC_GRADES = ["J55UP", "K55", "SAE1035M"]
+DEFAULT_MC_GRADES = [
+    "SS400SI-B", "SS400AL-M1", "SS400SI-M1", "W41MZG", "W490ZG", "ASTM-A36-2",
+    "C145S", "C147S", "GRADE-2641", "S355JR-2", "S275JR-2", "S355JR-2A", "C157S",
+    "W40MZG", "J55", "SAE1015-2", "SAE1017-3", "S275JR-2A", "X70", "SAE1017-2",
+    "J55-2", "C124", "C151S", "C1812S", "CT174S", "A36-VD", "S355J2NB-VD",
+    "C204S", "LPN 02", "GR65", "CN1812", "SS400AL-V2", "SS400AL-V3", "S275JR-P",
+    "1M23", "1020", "SS400", "SS400AL-V1", "S275JR-S", "SS55", "HSLA55-2",
+    "A572GR65", "1021", "31452", "31453", "11523", "21728", "31461", "J55UP-1",
+    "Q355B-SI", "S355JR-3", "S355JR-3A", "S355J0-2A", "S355JR-2B", "A572GR55",
+    "S355J0-2", "SAE1017-M", "SS400-FR", "SS400-XX", "SPA-H-2", "ASTM-A36-1",
+    "C104S", "C124S", "GRADE-2281", "GRADE-2611", "S355MC", "S440FG", "SWRH82A-2",
+    "S420MC", "X52ME", "S700MC", "DP600", "SAE1300M", "SAE1012-2", "SAE1010-2",
+    "S500MC", "S460MC", "53235", "54354", "53275", "54355", "53234", "LPN 13",
+    "LPN 01", "CT1513W", "S700MC-P", "1010", "LPN01", "LPN13", "LPN02", "33900",
+    "SS490", "31075", "P235GH", "L245M", "S490LW", "S590LW", "HSLAF80",
+    "BJ-PS-M570", "BJ-PS-M570-2", "S235J2CR",
+]
+DEFAULT_LC_GRADES = [
+    "SAE1006AL-M1", "GRADE G", "SAE1006-AL", "C032S", "GRADE-2701", "SAE1006AL-2",
+    "S235JR-2", "SAE1008-2", "S235JR-2A", "SAE1006AL-3", "SAE1006AL-4", "SAE1004",
+    "SAE1006B", "SAE1006AL-V1", "SAE1006AL-V2", "30111", "36330", "36380", "36420",
+    "36355", "SAE1006AL-V3", "SAE1006", "1006", "0655-HSLA", "SAE1006T", "1008",
+    "N006", "HC350LA", "HC420LA", "SAE1006AL-M2", "S355MC3.3", "SAE1006AL-V0",
+    "SAPH440", "SPHC", "IF", "IFC06", "IFTC06", "IF02",
+]
+
+
+def normalize_grade_token(g: any) -> str:
+    return re.sub(r"\s+", " ", str(g or "").strip().upper())
+
+
+def extract_grade_from_row(mac_phoi: str, mat_desc: str) -> str:
+    g = normalize_grade_token(mac_phoi)
+    if not g and mat_desc:
+        m = re.search(r"\d+(?:[.,]\d+)?\s*[xX×]\s*\d+(?:[.,]\d+)?\s+(.+)$", str(mat_desc).strip())
+        if m:
+            g = normalize_grade_token(m.group(1))
+    return g
+
+
+def _parse_grade_list_str(raw_str: str) -> list[str]:
+    if not raw_str:
+        return []
+    parts = re.split(r"[,;\n\r]+", str(raw_str))
+    seen = set()
+    res = []
+    for p in parts:
+        tok = normalize_grade_token(p)
+        if tok and tok not in seen:
+            seen.add(tok)
+            res.append(tok)
+    return res
+
+
+def ensure_rules_skin_seeded(force_reset: bool = False):
+    """Tự động tạo bảng và khởi tạo dữ liệu mặc định cho sheet Rules_SKIN nếu đang trống."""
+    with get_db() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS skin_rules_rows (
+                id TEXT PRIMARY KEY,
+                row_number INTEGER,
+                values_json TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_skin_rules_row_num ON skin_rules_rows(row_number);")
+        if force_reset:
+            conn.execute("DELETE FROM skin_rules_rows")
+
+    existing_rows = query_all("SELECT id, row_number, values_json FROM skin_rules_rows ORDER BY row_number ASC")
+    has_nonempty_grade_group = False
+    has_elongation = False
+    max_row_num = 0
+    for r in existing_rows:
+        max_row_num = max(max_row_num, r.get("row_number") or 0)
+        try:
+            v = json.loads(r.get("values_json") or "{}")
+        except Exception:
+            continue
+        rt = str(v.get("Loại Rule") or "").strip().upper()
+        if rt == "GRADE_GROUP" and str(v.get("Mác phôi") or "").strip():
+            has_nonempty_grade_group = True
+        elif rt == "ELONGATION":
+            has_elongation = True
+
+    if has_nonempty_grade_group and has_elongation:
+        return
+
+    now_iso = datetime.now().isoformat()
+    to_insert = []
+
+    if not has_nonempty_grade_group:
+        # Xóa các dòng GRADE_GROUP rỗng cũ nếu có
+        with get_db() as conn:
+            for r in existing_rows:
+                try:
+                    v = json.loads(r.get("values_json") or "{}")
+                except Exception:
+                    continue
+                if str(v.get("Loại Rule") or "").strip().upper() == "GRADE_GROUP":
+                    conn.execute("DELETE FROM skin_rules_rows WHERE id = ?", (r["id"],))
+        to_insert.extend([
+            {
+                "Loại Rule": "GRADE_GROUP",
+                "Nhóm / GHC": "MC",
+                "Mác phôi": ", ".join(DEFAULT_MC_GRADES),
+                "Ghi chú": "Nhóm mác phôi MC (gom chung 1 Plan)",
+            },
+            {
+                "Loại Rule": "GRADE_GROUP",
+                "Nhóm / GHC": "LC",
+                "Mác phôi": ", ".join(DEFAULT_LC_GRADES),
+                "Ghi chú": "Nhóm mác phôi LC (gom chung 1 Plan)",
+            },
+            {
+                "Loại Rule": "GRADE_GROUP",
+                "Nhóm / GHC": "HC",
+                "Mác phôi": ", ".join(DEFAULT_HC_GRADES),
+                "Ghi chú": "Nhóm mác phôi HC (gom chung 1 Plan)",
+            },
+        ])
+
+    if not has_elongation:
+        for ghc_range in GHC_RANGES_ORDER:
+            row_obj = {
+                "Loại Rule": "ELONGATION",
+                "Nhóm / GHC": ghc_range,
+                "Mác phôi": "",
+                "Ghi chú": f"Bảng tra Elongation GHC {ghc_range}",
+            }
+            step_map = ELONGATION_LOOKUP.get(ghc_range, {})
+            for t_step in THICKNESS_STEPS_ORDER:
+                row_obj[str(t_step)] = str(step_map.get(t_step, ""))
+            to_insert.append(row_obj)
+
+    if to_insert:
+        with get_db() as conn:
+            db_inserts = []
+            for idx, rdata in enumerate(to_insert, start=max_row_num + 1):
+                db_inserts.append((
+                    str(uuid.uuid4()),
+                    idx,
+                    json.dumps(rdata, ensure_ascii=False),
+                    now_iso,
+                    now_iso,
+                ))
+            conn.executemany(
+                "INSERT INTO skin_rules_rows (id, row_number, values_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                db_inserts,
+            )
+
+
+def reset_rules_skin_defaults() -> dict:
+    """Khôi phục nhóm mác phôi MC/LC/HC và bảng tra Elongation về cấu hình mặc định."""
+    ensure_rules_skin_seeded(force_reset=True)
+    return {"success": True, "message": "Đã khôi phục nhóm mác phôi MC/LC/HC và bảng Elongation mặc định!", **get_rules_skin_data()}
+
+
+def get_dynamic_elongation_lookup() -> dict:
+    """Đọc bảng tra Elongation từ skin_rules_rows (fallback về ELONGATION_LOOKUP nếu chưa có)."""
+    ensure_rules_skin_seeded()
+    rows = query_all("SELECT values_json FROM skin_rules_rows ORDER BY row_number ASC")
+    lookup = {k: dict(v) for k, v in ELONGATION_LOOKUP.items()}
+    for r in rows:
+        try:
+            v = json.loads(r.get("values_json") or "{}")
+        except Exception:
+            continue
+        if str(v.get("Loại Rule") or "").strip().upper() != "ELONGATION":
+            continue
+        ghc_range = str(v.get("Nhóm / GHC") or "").strip()
+        if ghc_range not in lookup:
+            lookup[ghc_range] = {}
+        for t_step in THICKNESS_STEPS_ORDER:
+            raw_val = v.get(str(t_step))
+            if raw_val is not None and str(raw_val).strip() != "":
+                try:
+                    lookup[ghc_range][t_step] = float(str(raw_val).replace(",", ".").strip())
+                except Exception:
+                    pass
+    return lookup
+
+
+def get_dynamic_grade_sets() -> tuple[set[str], set[str], set[str]]:
+    """Trả về (HC_SET, MC_SET, LC_SET) đã chuẩn hóa từ Rules_SKIN."""
+    ensure_rules_skin_seeded()
+    rows = query_all("SELECT values_json FROM skin_rules_rows ORDER BY row_number ASC")
+    groups = {"HC": [], "MC": [], "LC": []}
+    for r in rows:
+        try:
+            v = json.loads(r.get("values_json") or "{}")
+        except Exception:
+            continue
+        if str(v.get("Loại Rule") or "").strip().upper() != "GRADE_GROUP":
+            continue
+        grp = str(v.get("Nhóm / GHC") or "").strip().upper()
+        if grp in groups:
+            groups[grp].extend(_parse_grade_list_str(v.get("Mác phôi") or ""))
+
+    def build_set(items: list[str]) -> set[str]:
+        s = set()
+        for x in items:
+            t = normalize_grade_token(x)
+            if t:
+                s.add(t)
+                s.add(t.replace(" ", ""))
+        return s
+
+    return build_set(groups["HC"]), build_set(groups["MC"]), build_set(groups["LC"])
+
+
+def get_unmatched_grades_from_hrc2(
+    hc_set: set[str] | None = None,
+    mc_set: set[str] | None = None,
+    lc_set: set[str] | None = None,
+) -> list[dict]:
+    """Quét SKIN_HRC2 tìm các mác phôi chưa nằm trong MC, LC, HC."""
+    if hc_set is None or mc_set is None or lc_set is None:
+        hc_set, mc_set, lc_set = get_dynamic_grade_sets()
+
+    rows = query_all("SELECT values_json FROM skin_hrc2_rows ORDER BY row_number ASC")
+    counts: dict[str, dict] = {}
+    for r in rows:
+        try:
+            v = json.loads(r.get("values_json") or "{}")
+        except Exception:
+            continue
+        if str(v.get("Đã chạy") or "").strip() != "":
+            continue
+        mac_phoi = str(v.get("Mác phôi") or "").strip()
+        mat_desc = str(v.get("Material Description") or "").strip()
+        g = extract_grade_from_row(mac_phoi, mat_desc)
+        if not g:
+            continue
+        g_ns = g.replace(" ", "")
+        if g in hc_set or g_ns in hc_set or g in mc_set or g_ns in mc_set or g in lc_set or g_ns in lc_set:
+            continue
+        if g not in counts:
+            counts[g] = {
+                "grade": g,
+                "count": 0,
+                "pending_plan_count": 0,
+                "sample_coil": str(v.get("ID Cuộn Bó") or "").strip(),
+            }
+        counts[g]["count"] += 1
+        if str(v.get("Kế hoạch") or "").strip() == "":
+            counts[g]["pending_plan_count"] += 1
+
+    result = list(counts.values())
+    result.sort(key=lambda x: (-x["pending_plan_count"], -x["count"], x["grade"]))
+    return result
+
+
+def get_rules_skin_data() -> dict:
+    """Lấy toàn bộ dữ liệu cấu hình cho sheet Rules_SKIN (nhóm mác phôi, bảng Elongation, mác chưa phân nhóm)."""
+    ensure_rules_skin_seeded()
+    rows = query_all("SELECT id, row_number, values_json FROM skin_rules_rows ORDER BY row_number ASC")
+    grade_groups = {"MC": [], "LC": [], "HC": []}
+    elongation_map = {}
+
+    for r in rows:
+        try:
+            v = json.loads(r.get("values_json") or "{}")
+        except Exception:
+            continue
+        rule_type = str(v.get("Loại Rule") or "").strip().upper()
+        key = str(v.get("Nhóm / GHC") or "").strip()
+        if rule_type == "GRADE_GROUP" and key.upper() in grade_groups:
+            grp_key = key.upper()
+            for tok in _parse_grade_list_str(v.get("Mác phôi") or ""):
+                if tok not in grade_groups[grp_key]:
+                    grade_groups[grp_key].append(tok)
+        elif rule_type == "ELONGATION" and key:
+            row_dict = {"ghc_range": key, "notes": str(v.get("Ghi chú") or "")}
+            for t_step in THICKNESS_STEPS_ORDER:
+                sk = str(t_step)
+                val = v.get(sk)
+                if val is None or str(val).strip() == "":
+                    val = ELONGATION_LOOKUP.get(key, {}).get(t_step, "")
+                row_dict[sk] = str(val) if val != "" else ""
+            elongation_map[key] = row_dict
+
+    elongation_table = []
+    for ghc_range in GHC_RANGES_ORDER:
+        if ghc_range in elongation_map:
+            elongation_table.append(elongation_map[ghc_range])
+        else:
+            row_dict = {"ghc_range": ghc_range, "notes": ""}
+            for t_step in THICKNESS_STEPS_ORDER:
+                row_dict[str(t_step)] = str(ELONGATION_LOOKUP.get(ghc_range, {}).get(t_step, ""))
+            elongation_table.append(row_dict)
+
+    hc_set, mc_set, lc_set = get_dynamic_grade_sets()
+    unmatched_grades = get_unmatched_grades_from_hrc2(hc_set, mc_set, lc_set)
+    existing_unmatched_ns = {item["grade"].replace(" ", "") for item in unmatched_grades}
+
+    # Gộp thêm các mác đã bị xóa khỏi nhóm (hoặc mác mặc định chưa nằm trong MC/LC/HC) để hiển thị lại ở danh sách thêm
+    removed_pool = []
+    for r in rows:
+        try:
+            v = json.loads(r.get("values_json") or "{}")
+        except Exception:
+            continue
+        if str(v.get("Loại Rule") or "").strip().upper() == "REMOVED_GRADES":
+            removed_pool.extend(_parse_grade_list_str(v.get("Mác phôi") or ""))
+
+    for def_g in (DEFAULT_MC_GRADES + DEFAULT_LC_GRADES + DEFAULT_HC_GRADES):
+        tok = normalize_grade_token(def_g)
+        if tok:
+            removed_pool.append(tok)
+
+    for tok in removed_pool:
+        tok_ns = tok.replace(" ", "")
+        if tok in hc_set or tok_ns in hc_set or tok in mc_set or tok_ns in mc_set or tok in lc_set or tok_ns in lc_set:
+            continue
+        if tok_ns in existing_unmatched_ns:
+            continue
+        existing_unmatched_ns.add(tok_ns)
+        unmatched_grades.append({
+            "grade": tok,
+            "count": 0,
+            "pending_plan_count": 0,
+            "sample_coil": "",
+            "from_removed": True,
+        })
+
+    return {
+        "grade_groups": grade_groups,
+        "elongation_table": elongation_table,
+        "thickness_steps": [str(t) for t in THICKNESS_STEPS_ORDER],
+        "unmatched_grades": unmatched_grades,
+    }
+
+
+def add_grade_to_rules_skin(group_name: str, grades: list[str]) -> dict:
+    """Thêm một hoặc nhiều mác phôi vào nhóm MC / LC / HC (tự động loại bỏ khỏi nhóm khác nếu có)."""
+    ensure_rules_skin_seeded()
+    grp = str(group_name or "").strip().upper()
+    if grp not in ("MC", "LC", "HC"):
+        raise ValueError(f"Nhóm '{group_name}' không hợp lệ. Chỉ hỗ trợ MC, LC, HC.")
+
+    clean_grades = []
+    for g in (grades or []):
+        for tok in _parse_grade_list_str(g):
+            if tok not in clean_grades:
+                clean_grades.append(tok)
+    if not clean_grades:
+        raise ValueError("Chưa nhập mác phôi hợp lệ.")
+
+    clean_nospace = {t.replace(" ", "") for t in clean_grades}
+    now_iso = datetime.now().isoformat()
+
+    rows = query_all("SELECT id, row_number, values_json FROM skin_rules_rows ORDER BY row_number ASC")
+    with get_db() as conn:
+        found_target = False
+        max_row_num = 0
+        for r in rows:
+            max_row_num = max(max_row_num, r.get("row_number") or 0)
+            try:
+                v = json.loads(r.get("values_json") or "{}")
+            except Exception:
+                continue
+            rt = str(v.get("Loại Rule") or "").strip().upper()
+            if rt == "REMOVED_GRADES":
+                existing_rem = _parse_grade_list_str(v.get("Mác phôi") or "")
+                filtered_rem = [x for x in existing_rem if x.replace(" ", "") not in clean_nospace]
+                if len(filtered_rem) != len(existing_rem):
+                    v["Mác phôi"] = ", ".join(filtered_rem)
+                    conn.execute(
+                        "UPDATE skin_rules_rows SET values_json = ?, updated_at = ? WHERE id = ?",
+                        (json.dumps(v, ensure_ascii=False), now_iso, r["id"]),
+                    )
+                continue
+            if rt != "GRADE_GROUP":
+                continue
+            r_grp = str(v.get("Nhóm / GHC") or "").strip().upper()
+            existing_list = _parse_grade_list_str(v.get("Mác phôi") or "")
+            if r_grp == grp:
+                found_target = True
+                existing_ns = {x.replace(" ", "") for x in existing_list}
+                for tok in clean_grades:
+                    if tok.replace(" ", "") not in existing_ns:
+                        existing_list.append(tok)
+                        existing_ns.add(tok.replace(" ", ""))
+                v["Mác phôi"] = ", ".join(existing_list)
+                conn.execute(
+                    "UPDATE skin_rules_rows SET values_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(v, ensure_ascii=False), now_iso, r["id"]),
+                )
+            elif r_grp in ("MC", "LC", "HC"):
+                filtered = [x for x in existing_list if x.replace(" ", "") not in clean_nospace]
+                if len(filtered) != len(existing_list):
+                    v["Mác phôi"] = ", ".join(filtered)
+                    conn.execute(
+                        "UPDATE skin_rules_rows SET values_json = ?, updated_at = ? WHERE id = ?",
+                        (json.dumps(v, ensure_ascii=False), now_iso, r["id"]),
+                    )
+
+        if not found_target:
+            new_row = {
+                "Loại Rule": "GRADE_GROUP",
+                "Nhóm / GHC": grp,
+                "Mác phôi": ", ".join(clean_grades),
+                "Ghi chú": f"Nhóm mác phôi {grp}",
+            }
+            conn.execute(
+                "INSERT INTO skin_rules_rows (id, row_number, values_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), max_row_num + 1, json.dumps(new_row, ensure_ascii=False), now_iso, now_iso),
+            )
+
+    return {"success": True, "message": f"Đã thêm {len(clean_grades)} mác vào nhóm {grp}.", **get_rules_skin_data()}
+
+
+def remove_grade_from_rules_skin(group_name: str, grade: str) -> dict:
+    """Xóa 1 mác phôi khỏi nhóm MC / LC / HC."""
+    ensure_rules_skin_seeded()
+    grp = str(group_name or "").strip().upper()
+    if grp not in ("MC", "LC", "HC"):
+        raise ValueError(f"Nhóm '{group_name}' không hợp lệ.")
+    target = normalize_grade_token(grade)
+    if not target:
+        raise ValueError("Mác phôi không hợp lệ.")
+    target_ns = target.replace(" ", "")
+    now_iso = datetime.now().isoformat()
+
+    rows = query_all("SELECT id, row_number, values_json FROM skin_rules_rows ORDER BY row_number ASC")
+    with get_db() as conn:
+        removed_row = None
+        max_row_num = 0
+        for r in rows:
+            max_row_num = max(max_row_num, r.get("row_number") or 0)
+            try:
+                v = json.loads(r.get("values_json") or "{}")
+            except Exception:
+                continue
+            rt = str(v.get("Loại Rule") or "").strip().upper()
+            if rt == "REMOVED_GRADES":
+                removed_row = (r, v)
+                continue
+            if rt != "GRADE_GROUP":
+                continue
+            if str(v.get("Nhóm / GHC") or "").strip().upper() == grp:
+                existing_list = _parse_grade_list_str(v.get("Mác phôi") or "")
+                filtered = [x for x in existing_list if x.replace(" ", "") != target_ns]
+                v["Mác phôi"] = ", ".join(filtered)
+                conn.execute(
+                    "UPDATE skin_rules_rows SET values_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(v, ensure_ascii=False), now_iso, r["id"]),
+                )
+
+        if removed_row:
+            r_obj, r_val = removed_row
+            rem_list = _parse_grade_list_str(r_val.get("Mác phôi") or "")
+            if target_ns not in {x.replace(" ", "") for x in rem_list}:
+                rem_list.append(target)
+                r_val["Mác phôi"] = ", ".join(rem_list)
+                conn.execute(
+                    "UPDATE skin_rules_rows SET values_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(r_val, ensure_ascii=False), now_iso, r_obj["id"]),
+                )
+        else:
+            new_rem = {
+                "Loại Rule": "REMOVED_GRADES",
+                "Nhóm / GHC": "UNASSIGNED",
+                "Mác phôi": target,
+                "Ghi chú": "Mác phôi đã xóa khỏi nhóm, chờ phân loại lại",
+            }
+            conn.execute(
+                "INSERT INTO skin_rules_rows (id, row_number, values_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), max_row_num + 1, json.dumps(new_rem, ensure_ascii=False), now_iso, now_iso),
+            )
+
+    return {"success": True, "message": f"Đã xóa mác '{target}' khỏi nhóm {grp}.", **get_rules_skin_data()}
+
+
+def save_elongation_rules(elongation_rows: list[dict]) -> dict:
+    """Lưu bảng tra Elongation mới vào skin_rules_rows."""
+    ensure_rules_skin_seeded()
+    now_iso = datetime.now().isoformat()
+    incoming_map = {}
+    for item in (elongation_rows or []):
+        ghc_range = str(item.get("ghc_range") or item.get("Nhóm / GHC") or "").strip()
+        if ghc_range:
+            incoming_map[ghc_range] = item
+
+    rows = query_all("SELECT id, row_number, values_json FROM skin_rules_rows ORDER BY row_number ASC")
+    updated_ranges = set()
+    max_row_num = 0
+    with get_db() as conn:
+        for r in rows:
+            max_row_num = max(max_row_num, r.get("row_number") or 0)
+            try:
+                v = json.loads(r.get("values_json") or "{}")
+            except Exception:
+                continue
+            if str(v.get("Loại Rule") or "").strip().upper() != "ELONGATION":
+                continue
+            ghc_range = str(v.get("Nhóm / GHC") or "").strip()
+            if ghc_range in incoming_map:
+                src = incoming_map[ghc_range]
+                for t_step in THICKNESS_STEPS_ORDER:
+                    sk = str(t_step)
+                    if sk in src:
+                        raw_val = str(src[sk] if src[sk] is not None else "").replace(",", ".").strip()
+                        v[sk] = raw_val
+                if "notes" in src or "Ghi chú" in src:
+                    v["Ghi chú"] = str(src.get("notes") or src.get("Ghi chú") or "")
+                conn.execute(
+                    "UPDATE skin_rules_rows SET values_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(v, ensure_ascii=False), now_iso, r["id"]),
+                )
+                updated_ranges.add(ghc_range)
+
+        for ghc_range, src in incoming_map.items():
+            if ghc_range in updated_ranges:
+                continue
+            max_row_num += 1
+            new_row = {
+                "Loại Rule": "ELONGATION",
+                "Nhóm / GHC": ghc_range,
+                "Mác phôi": "",
+                "Ghi chú": str(src.get("notes") or src.get("Ghi chú") or f"Bảng tra Elongation GHC {ghc_range}"),
+            }
+            for t_step in THICKNESS_STEPS_ORDER:
+                sk = str(t_step)
+                new_row[sk] = str(src.get(sk) or "").replace(",", ".").strip()
+            conn.execute(
+                "INSERT INTO skin_rules_rows (id, row_number, values_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), max_row_num, json.dumps(new_row, ensure_ascii=False), now_iso, now_iso),
+            )
+
+    return {"success": True, "message": "Đã lưu bảng tra Elongation thành công!", **get_rules_skin_data()}
+
 def find_thickness_step(t: float) -> float:
     """Quy chuẩn độ dày tấm về các mốc chuẩn trong bảng tra (1.2 .. 6.0)"""
     if t <= 1.2:
@@ -618,9 +1184,9 @@ def get_row_thickness(vals: dict) -> float:
             return t
     return 0.0
 
-def calculate_elongation(ghc_val: any, thickness_val: any) -> str:
+def calculate_elongation(ghc_val: any, thickness_val: any, lookup_override: dict | None = None) -> str:
     """
-    Tra cứu Elongation dựa trên Giới hạn chảy (GHC) và Độ dày (Thickness) theo bảng excel chuẩn.
+    Tra cứu Elongation dựa trên Giới hạn chảy (GHC) và Độ dày (Thickness) theo bảng Rules_SKIN (fallback bảng chuẩn).
     Trả về chuỗi số (e.g. '2.6', '1.8') hoặc rỗng nếu chưa đủ dữ liệu.
     """
     if ghc_val is None or str(ghc_val).strip() in ("", "-", "None", "0", "-1.0"):
@@ -658,9 +1224,13 @@ def calculate_elongation(ghc_val: any, thickness_val: any) -> str:
         group_key = ">500"
 
     t_step = find_thickness_step(t)
-    elongation = ELONGATION_LOOKUP[group_key].get(t_step)
-    if elongation is not None:
+    lookup = lookup_override if lookup_override is not None else get_dynamic_elongation_lookup()
+    elongation = lookup.get(group_key, {}).get(t_step)
+    if elongation is not None and str(elongation).strip() != "":
         return str(elongation)
+    fallback_val = ELONGATION_LOOKUP.get(group_key, {}).get(t_step)
+    if fallback_val is not None:
+        return str(fallback_val)
     return ""
 
 def replace_id(coil_id: any) -> str:
@@ -745,10 +1315,10 @@ def get_current_and_prev_months() -> list[int]:
 
 def load_data_source_from_qc(months: list[int] | None = None) -> dict:
     """
-    Query qcrows table from 'Dữ liệu' page for the requested months (default: current month and previous month).
+    Query qc_rows table from 'Dữ liệu' page for the requested months (default: current month and previous month).
     Sorted strictly by month (chronological order) and within each month in exact QC export order (row_number ASC),
     without filtering out any handling direction (takes all SKIN, SKIN_CUST, SKIN_RCL_AGAIN, CXL, FINAL, etc.),
-    merges all original fields from qcrows, maps to DATA_SOURCE columns, and stores in skin_data_source_rows.
+    merges all original fields from qc_rows, maps to DATA_SOURCE columns, and stores in skin_data_source_rows.
     """
     if not months:
         months = get_current_and_prev_months()
@@ -767,7 +1337,7 @@ def load_data_source_from_qc(months: list[int] | None = None) -> dict:
         rep_id = f"thang-{m}"
         month_rows = query_all("""
             SELECT id, report_id, sheet_name, row_number, order_id, coil_id, values_json 
-            FROM qcrows 
+            FROM qc_rows 
             WHERE report_id = ?
             ORDER BY row_number ASC
         """, (rep_id,))
@@ -776,7 +1346,7 @@ def load_data_source_from_qc(months: list[int] | None = None) -> dict:
             # Fallback to master report '6adf6dc6c603752d3ddd162d' for month m
             master_rows = query_all("""
                 SELECT id, report_id, sheet_name, row_number, order_id, coil_id, values_json 
-                FROM qcrows 
+                FROM qc_rows 
                 WHERE report_id = '6adf6dc6c603752d3ddd162d'
                 ORDER BY row_number ASC
             """)
@@ -1362,15 +1932,15 @@ def import_paste_rows(sheet_name: str, rows_data: list[dict]) -> dict:
                     cid = str(v.get("ID Cuộn (Yêu cầu)") or "").strip()
                     creq = str(v.get("Yêu cầu đặc biệt (Cuộn)") or "").strip()
                     if cid and creq:
-                        conn.execute("INSERT OR REPLACE INTO skin_pivot_coil_req (id, coil_id, requirement, updated_at) VALUES (?, ?, ?, ?)", (str(uuid.uuid4()), cid, creq, now))
+                        conn.execute("INSERT OR REPLACE INTO skin_pivot_coil_reqs (id, coil_id, requirement, updated_at) VALUES (?, ?, ?, ?)", (str(uuid.uuid4()), cid, creq, now))
                     po = str(v.get("PO (Yêu cầu)") or "").strip()
                     preq = str(v.get("Yêu cầu đặc biệt (PO)") or "").strip()
                     if po and preq:
-                        conn.execute("INSERT OR REPLACE INTO skin_pivot_po_req (id, po, requirement, updated_at) VALUES (?, ?, ?, ?)", (str(uuid.uuid4()), po, preq, now))
+                        conn.execute("INSERT OR REPLACE INTO skin_pivot_po_reqs (id, po, requirement, updated_at) VALUES (?, ?, ?, ?)", (str(uuid.uuid4()), po, preq, now))
                     target = str(v.get("PO/ID cuộn (Ưu tiên)") or "").strip()
                     prio = str(v.get("Ưu tiên sản xuất") or "").strip()
                     if target and prio:
-                        conn.execute("INSERT OR REPLACE INTO skin_pivot_priority (id, target_id, priority, updated_at) VALUES (?, ?, ?, ?)", (str(uuid.uuid4()), target, prio, now))
+                        conn.execute("INSERT OR REPLACE INTO skin_pivot_priorities (id, target_id, priority, updated_at) VALUES (?, ?, ?, ?)", (str(uuid.uuid4()), target, prio, now))
         except Exception: pass
 
     msg = f"Đã thêm thành công {len(rows_to_insert)} dòng"
@@ -1677,9 +2247,9 @@ def clear_sheet(sheet_name: str) -> bool:
     with get_db() as conn:
         conn.execute(f"DELETE FROM {table}")
         if sheet_key.upper() == "PIVOT_TABLE":
-            conn.execute("DELETE FROM skin_pivot_coil_req")
-            conn.execute("DELETE FROM skin_pivot_po_req")
-            conn.execute("DELETE FROM skin_pivot_priority")
+            conn.execute("DELETE FROM skin_pivot_coil_reqs")
+            conn.execute("DELETE FROM skin_pivot_po_reqs")
+            conn.execute("DELETE FROM skin_pivot_priorities")
         return True
 
 # ==============================================================================
@@ -1952,18 +2522,18 @@ def recalculate_skin_hrc2() -> dict:
     pivot_po_req_map = {}
     pivot_priority_map = {}
     try:
-        for pcr in query_all("SELECT coil_id, requirement FROM skin_pivot_coil_req WHERE coil_id != ''"):
+        for pcr in query_all("SELECT coil_id, requirement FROM skin_pivot_coil_reqs WHERE coil_id != ''"):
             c_val = str(pcr.get("coil_id") or "").strip()
             if c_val:
                 pivot_coil_req_map[c_val] = str(pcr.get("requirement") or "").strip()
                 pivot_coil_req_map[replace_id(c_val)] = str(pcr.get("requirement") or "").strip()
 
-        for ppr in query_all("SELECT po, requirement FROM skin_pivot_po_req WHERE po != ''"):
+        for ppr in query_all("SELECT po, requirement FROM skin_pivot_po_reqs WHERE po != ''"):
             p_val = clean_po_str(ppr.get("po"))
             if p_val:
                 pivot_po_req_map[p_val] = str(ppr.get("requirement") or "").strip()
 
-        for prio_r in query_all("SELECT target_id, priority FROM skin_pivot_priority WHERE target_id != ''"):
+        for prio_r in query_all("SELECT target_id, priority FROM skin_pivot_priorities WHERE target_id != ''"):
             t_val = str(prio_r.get("target_id") or "").strip()
             if t_val:
                 pivot_priority_map[t_val] = str(prio_r.get("priority") or "").strip()
@@ -2307,13 +2877,13 @@ def generate_get_data_rows(selected_plans: list[str] | None = None) -> dict:
     pivot_coil_req_map = {}
     pivot_po_req_map = {}
     try:
-        for pcr in query_all("SELECT coil_id, requirement FROM skin_pivot_coil_req WHERE coil_id != ''"):
+        for pcr in query_all("SELECT coil_id, requirement FROM skin_pivot_coil_reqs WHERE coil_id != ''"):
             c_val = str(pcr.get("coil_id") or "").strip()
             if c_val:
                 pivot_coil_req_map[c_val] = str(pcr.get("requirement") or "").strip()
                 pivot_coil_req_map[replace_id(c_val)] = str(pcr.get("requirement") or "").strip()
 
-        for ppr in query_all("SELECT po, requirement FROM skin_pivot_po_req WHERE po != ''"):
+        for ppr in query_all("SELECT po, requirement FROM skin_pivot_po_reqs WHERE po != ''"):
             p_val = clean_po_str(ppr.get("po"))
             if p_val:
                 pivot_po_req_map[p_val] = str(ppr.get("requirement") or "").strip()
@@ -2349,8 +2919,17 @@ def generate_get_data_rows(selected_plans: list[str] | None = None) -> dict:
 
         src = source_map.get(coil_id) or source_map.get(coil_id2) or {}
         prod_date = src.get("ngaySanXuat", "")
-        # Tổng hợp lỗi: Đã bỏ phần lỗi lệch (loiLechTDC), chỉ giữ Hướng xử lý và Ghi chú
-        error_parts = [src.get("huongXuLy"), src.get("ghiChu")]
+        # Tổng hợp lỗi: nếu LỖI LỆCH TDC có chữ "khối lượng" thì vẫn thêm vào, còn ngoài ra bỏ ra chỉ lấy Ghi chú
+        loi_lech = str(src.get("loiLechTDC") or "").strip()
+        loi_lech_ascii = "".join(
+            ch for ch in unicodedata.normalize("NFD", loi_lech.lower())
+            if unicodedata.category(ch) != "Mn"
+        ).replace("đ", "d")
+        error_parts = []
+        if loi_lech and ("khoi luong" in loi_lech_ascii or "khối lượng" in loi_lech.lower()):
+            error_parts.append(loi_lech)
+        if src.get("ghiChu"):
+            error_parts.append(src.get("ghiChu"))
         tong_hop_loi = " || ".join(p for p in error_parts if p)
 
         # Tra cứu Yêu cầu đặc biệt từ PivotTable (theo ID cuộn hoặc theo PO)
@@ -2773,7 +3352,7 @@ def build_demand_lookup_index() -> tuple[dict, dict]:
     Tạo index tra cứu PO từ:
     1. Table nc_rows (Nhu cầu đơn hàng HRC)
     2. Table skin_po_skin_rows & skin_po_hsm_rows
-    3. Dự phòng từ skin_hrc2_rows & qcrows
+    3. Dự phòng từ skin_hrc2_rows & qc_rows
     Trả về: (by_po_hsm, by_po_spm)
     """
     ensure_nc_data_seeded()
@@ -3101,9 +3680,9 @@ def sync_all_demand_to_get_data_po(clear_first: bool = True) -> dict:
 # ==============================================================================
 def get_pivot_data() -> dict:
     """Lấy dữ liệu cả 3 bảng của PivotTable"""
-    coil_reqs = query_all("SELECT id, coil_id, requirement, updated_at FROM skin_pivot_coil_req ORDER BY updated_at DESC")
-    po_reqs = query_all("SELECT id, po, requirement, updated_at FROM skin_pivot_po_req ORDER BY updated_at DESC")
-    priorities = query_all("SELECT id, target_id, priority, updated_at FROM skin_pivot_priority ORDER BY updated_at DESC")
+    coil_reqs = query_all("SELECT id, coil_id, requirement, updated_at FROM skin_pivot_coil_reqs ORDER BY updated_at DESC")
+    po_reqs = query_all("SELECT id, po, requirement, updated_at FROM skin_pivot_po_reqs ORDER BY updated_at DESC")
+    priorities = query_all("SELECT id, target_id, priority, updated_at FROM skin_pivot_priorities ORDER BY updated_at DESC")
 
     return {
         "success": True,
@@ -3133,7 +3712,7 @@ def save_pivot_block(block_type: str, items: list[dict], clear_first: bool = Fal
 
         if block_type == "coil":
             if clear_first:
-                cur.execute("DELETE FROM skin_pivot_coil_req")
+                cur.execute("DELETE FROM skin_pivot_coil_reqs")
             to_insert = []
             for it in items:
                 cid = str(it.get("coil_id") or it.get("ID Cuộn") or it.get("ID Cuộn (Yêu cầu)") or it.get("id") or "").strip()
@@ -3141,12 +3720,12 @@ def save_pivot_block(block_type: str, items: list[dict], clear_first: bool = Fal
                 if cid:
                     to_insert.append((str(uuid.uuid4()), cid, req, now_iso))
             if to_insert:
-                cur.executemany("INSERT INTO skin_pivot_coil_req (id, coil_id, requirement, updated_at) VALUES (?, ?, ?, ?)", to_insert)
+                cur.executemany("INSERT INTO skin_pivot_coil_reqs (id, coil_id, requirement, updated_at) VALUES (?, ?, ?, ?)", to_insert)
                 inserted_count = len(to_insert)
 
         elif block_type == "po":
             if clear_first:
-                cur.execute("DELETE FROM skin_pivot_po_req")
+                cur.execute("DELETE FROM skin_pivot_po_reqs")
             to_insert = []
             for it in items:
                 po_val = clean_po_str(it.get("po") or it.get("PO") or it.get("PO (Yêu cầu)"))
@@ -3154,12 +3733,12 @@ def save_pivot_block(block_type: str, items: list[dict], clear_first: bool = Fal
                 if po_val:
                     to_insert.append((str(uuid.uuid4()), po_val, req, now_iso))
             if to_insert:
-                cur.executemany("INSERT INTO skin_pivot_po_req (id, po, requirement, updated_at) VALUES (?, ?, ?, ?)", to_insert)
+                cur.executemany("INSERT INTO skin_pivot_po_reqs (id, po, requirement, updated_at) VALUES (?, ?, ?, ?)", to_insert)
                 inserted_count = len(to_insert)
 
         elif block_type == "priority":
             if clear_first:
-                cur.execute("DELETE FROM skin_pivot_priority")
+                cur.execute("DELETE FROM skin_pivot_priorities")
             to_insert = []
             for it in items:
                 tgt = str(it.get("target_id") or it.get("PO/ID cuộn") or it.get("PO/ID cuộn (Ưu tiên)") or it.get("PO") or "").strip()
@@ -3167,7 +3746,7 @@ def save_pivot_block(block_type: str, items: list[dict], clear_first: bool = Fal
                 if tgt:
                     to_insert.append((str(uuid.uuid4()), tgt, prio, now_iso))
             if to_insert:
-                cur.executemany("INSERT INTO skin_pivot_priority (id, target_id, priority, updated_at) VALUES (?, ?, ?, ?)", to_insert)
+                cur.executemany("INSERT INTO skin_pivot_priorities (id, target_id, priority, updated_at) VALUES (?, ?, ?, ?)", to_insert)
                 inserted_count = len(to_insert)
 
         # Đồng bộ vào skin_pivot_table_rows để xem dạng bảng tổng hợp
@@ -3188,9 +3767,9 @@ def save_pivot_block(block_type: str, items: list[dict], clear_first: bool = Fal
 
 def sync_pivot_sheet_rows(cur):
     """Đồng bộ 3 bảng nhỏ vào bảng skin_pivot_table_rows để hiển thị dạng bảng tính 6 cột"""
-    coils = cur.execute("SELECT coil_id, requirement FROM skin_pivot_coil_req ORDER BY updated_at DESC").fetchall()
-    pos = cur.execute("SELECT po, requirement FROM skin_pivot_po_req ORDER BY updated_at DESC").fetchall()
-    prios = cur.execute("SELECT target_id, priority FROM skin_pivot_priority ORDER BY updated_at DESC").fetchall()
+    coils = cur.execute("SELECT coil_id, requirement FROM skin_pivot_coil_reqs ORDER BY updated_at DESC").fetchall()
+    pos = cur.execute("SELECT po, requirement FROM skin_pivot_po_reqs ORDER BY updated_at DESC").fetchall()
+    prios = cur.execute("SELECT target_id, priority FROM skin_pivot_priorities ORDER BY updated_at DESC").fetchall()
 
     max_len = max(len(coils), len(pos), len(prios), 0)
     cur.execute("DELETE FROM skin_pivot_table_rows")
@@ -3408,8 +3987,8 @@ def import_hang_vot_excel(buffer: bytes | None = None, original_name: str = "", 
     return import_hang_vot_rows(formatted_rows, clear_first=True)
 
 
-HANG_VOT_SHAREPOINT_URL = "https://hoaphatcomvn-my.sharepoint.com/:x:/g/personal/nguyenvanthuc5_hoaphat_com_vn/IQDPX3Im9eftR4SWQZ2Ztyg3Ae4j-SCH9wqr9kjOEnd-2Sk"
-HANG_VOT_SHAREPOINT_FORMULA = "=LET(Data; 'https://hoaphatcomvn-my.sharepoint.com/:x:/g/personal/nguyenvanthuc5_hoaphat_com_vn/IQDPX3Im9eftR4SWQZ2Ztyg3Ae4j-SCH9wqr9kjOEnd-2Sk'!$A$1:$E$10000; FILTER(Data; BYROW(Data;LAMBDA(r;COUNTA(r)>0))))"
+HANG_VOT_SHAREPOINT_URL = "https://hoaphatcomvn-my.sharepoint.com/:x:/g/personal/nguyenvanthuc5_hoaphat_com_vn/IQDPX3Im9eftR4SWQZ2Ztyg3ATAftb8Orch5pC9etZQPgV0?e=SMKORv"
+HANG_VOT_SHAREPOINT_FORMULA = "=LET(Data; 'https://hoaphatcomvn-my.sharepoint.com/:x:/g/personal/nguyenvanthuc5_hoaphat_com_vn/IQDPX3Im9eftR4SWQZ2Ztyg3ATAftb8Orch5pC9etZQPgV0?e=SMKORv'!$A$1:$E$10000; FILTER(Data; BYROW(Data;LAMBDA(r;COUNTA(r)>0))))"
 
 
 def sync_hang_vot_data(custom_path: str | None = None) -> dict:
@@ -3430,11 +4009,12 @@ def sync_hang_vot_data(custom_path: str | None = None) -> dict:
 
     target_file = UPLOADS_DIR / "Xac_nhan_chuyen_loai_XCTT_NM.HRC2.xlsx"
 
-    # 1. Thử tải trực tiếp file mới nhất từ link SharePoint
+    # 1. Thử tải trực tiếp file mới nhất từ link SharePoint và ghi đè target_file
     download_success = False
     try:
         from playwright.sync_api import sync_playwright
-        download_url = f"{HANG_VOT_SHAREPOINT_URL}?download=1"
+        sep = "&" if "?" in HANG_VOT_SHAREPOINT_URL else "?"
+        download_url = f"{HANG_VOT_SHAREPOINT_URL}{sep}download=1"
         with sync_playwright() as p:
             launch_kwargs = {"headless": True, "timeout": 30000}
             try:
@@ -3443,7 +4023,7 @@ def sync_hang_vot_data(custom_path: str | None = None) -> dict:
                 try:
                     browser = p.chromium.launch(**{**launch_kwargs, "channel": "chrome"})
                 except Exception:
-                    browser = p.chromium.launch(**launch_kwargs)
+                    browser = p.chromium.launch(**{**launch_kwargs})
 
             context = browser.new_context(accept_downloads=True)
             page = context.new_page()
@@ -3454,9 +4034,11 @@ def sync_hang_vot_data(custom_path: str | None = None) -> dict:
                     pass
             dl = download_info.value
             UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-            dl.save_as(str(target_file))
+            tmp_target = UPLOADS_DIR / "Xac_nhan_chuyen_loai_XCTT_NM.HRC2.tmp.xlsx"
+            dl.save_as(str(tmp_target))
             browser.close()
-            if target_file.exists() and target_file.stat().st_size > 0:
+            if tmp_target.exists() and tmp_target.stat().st_size > 0:
+                tmp_target.replace(target_file)
                 download_success = True
     except Exception as e_dl:
         print(f"[HangVot] Tải trực tiếp SharePoint không thành công ({e_dl}), tìm file trên máy...")
@@ -3800,33 +4382,26 @@ def generate_skin_ke_hoach(
     skin2_target: int = 50,
     skin4_target: int = 50,
     update_source: bool = True,
-    today_date_str: str | None = None
+    today_date_str: str | None = None,
+    prod_from_date_str: str | None = None,
+    prod_to_date_str: str | None = None,
 ) -> dict:
     """
-    Thực hiện lập kế hoạch sản xuất cho 2 dây chuyền Skin Pass Mill 2 và 4 theo logic Office Script:
-    1. Đọc dữ liệu từ sheet SKIN_HRC2 (skin_hrc2_rows)
-    2. Lọc các cuộn đủ điều kiện:
+    Lập Kế hoạch Skin tự động theo logic mới:
+    1. Lọc các cuộn từ SKIN_HRC2:
        - 'Kế hoạch' còn trống
        - 'Đã chạy' còn trống
        - 'PO Tháng' không bắt đầu bằng 'tạo po'
        - 'Chỉ định Skin' không phải 'không xử lý'
-       - 'Ngày sản xuất' hợp lệ:
-         * Có Ưu tiên đơn hàng: dateKey < priorityCutoffKey (2 ngày trước ngày xét)
-         * Không có ưu tiên: dateKey < yesterdayKey (1 ngày trước ngày xét)
-       - Ca: bắt đầu bằng '1' -> 1, '2' -> 2, còn lại 99
-    3. Sắp xếp: Ưu tiên đơn hàng asc -> Ngày sản xuất asc -> Ca asc -> Thứ tự ban đầu
-    4. Gom nhóm theo ca (Shift Group): (ưu tiên, ngày, ca)
-    5. Phân bổ cân đối số lượng cuộn cho Skin 2 và Skin 4:
-       - Tôn trọng chỉ định cứng (SKIN2, SKIN4)
-       - Phân bổ cuộn linh hoạt (BOTH) sắp xếp theo chiều dày tăng dần
-    6. Tạo các Plan chuẩn (PL#2_0001, PL#4_0001...) theo target
-       - Phần dư cho vào Plan lỗi (PL#2ERROR_01, PL#4ERROR_01)
-    7. Ghép cặp đôi Plan (PL#2_xxxx và PL#4_xxxx cách nhau dòng trống)
-    8. Lưu dữ liệu vào skin_ke_hoach_rows, cập nhật cột 'Kế hoạch' trong skin_hrc2_rows
-    9. Tạo snapshot hoàn tác cho cả Kế hoạch và SKIN_HRC2
+       - 'Ngày sản xuất' hợp lệ và đã sản xuất >= 2 ngày (chưa được 2 ngày không lập lịch)
+    2. Phân nhóm Mác phôi theo 3 nhóm chính: MC (1) -> LC (2) -> HC (3) -> Khác (4)
+       Trích xuất khổ rộng (Width) từ Material Description để xếp từ khổ rộng lớn đến nhỏ.
+       Tách riêng nhóm cuộn có PO 20600 (PO Xử lý / PO Tháng bắt đầu bằng '20600') lập thành Plan riêng.
+    3. Sắp xếp ưu tiên: Ưu tiên đơn hàng asc -> Nhóm mác phôi (MC -> LC -> HC) -> Ngày sản xuất asc -> Khổ rộng desc -> Ca asc -> Thứ tự gốc.
+    4. Phân bổ cân đối Skin 2 và Skin 4 (tôn trọng chỉ định cứng SKIN2/SKIN4, chia đều BOTH).
+    5. Trong từng Plan, sắp xếp cuộn theo khổ rộng lớn đến nhỏ -> ngày sản xuất trước đến sau.
+    6. Lưu dữ liệu vào skin_ke_hoach_rows, không ghi đè SKIN_HRC2, tạo snapshot hoàn tác.
     """
-    from functools import cmp_to_key
-
     # Chuẩn hóa target
     s2_target = max(40, int(skin2_target or 50))
     s4_target = max(40, int(skin4_target or 50))
@@ -3842,6 +4417,19 @@ def generate_skin_ke_hoach(
                 today_dt = datetime.now()
     else:
         today_dt = datetime.now()
+
+    def _parse_opt_date(val_str: str | None):
+        if not val_str or not str(val_str).strip():
+            return None
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(str(val_str).strip(), fmt).date()
+            except Exception:
+                continue
+        return None
+
+    prod_from_date_only = _parse_opt_date(prod_from_date_str)
+    prod_to_date_only = _parse_opt_date(prod_to_date_str)
 
     def normalize_txt(v):
         return re.sub(r'\s+', ' ', str(v or '').replace('\u00A0', ' ')).strip().lower()
@@ -3909,10 +4497,35 @@ def generate_skin_ke_hoach(
             return 'SKIN4'
         return 'BOTH'
 
-    yesterday_dt = today_dt - timedelta(days=1)
-    yesterday_key = dt_to_key(yesterday_dt)
-    priority_cutoff_dt = today_dt - timedelta(days=2)
-    priority_cutoff_key = dt_to_key(priority_cutoff_dt)
+    def parse_width_val(mat_desc: str, width_field=None) -> float:
+        w = to_float_val(width_field)
+        if math.isfinite(w) and w > 0:
+            return w
+        m = re.search(r'\d+(?:[.,]\d+)?\s*[xX×]\s*(\d+(?:[.,]\d+)?)', str(mat_desc or ''))
+        if m:
+            try:
+                return float(m.group(1).replace(',', '.'))
+            except Exception:
+                pass
+        return 0.0
+
+    # Đọc 3 nhóm mác phôi động từ sheet Rules_SKIN: MC -> LC -> HC
+    HC_SET, MC_SET, LC_SET = get_dynamic_grade_sets()
+
+    def get_grade_group_rank(mac_phoi: str, mat_desc: str) -> tuple[int, str, str]:
+        g = extract_grade_from_row(mac_phoi, mat_desc)
+        g_nospace = g.replace(' ', '')
+        if not g:
+            return (4, "OTHER", "")
+        if g in HC_SET or g_nospace in HC_SET:
+            return (3, "HC", g)
+        if g in MC_SET or g_nospace in MC_SET:
+            return (1, "MC", g)
+        if g in LC_SET or g_nospace in LC_SET:
+            return (2, "LC", g)
+        return (4, "OTHER", g)
+
+    today_date_only = today_dt.date()
 
     raw_hrc2_rows = query_all("SELECT id, row_number, values_json FROM skin_hrc2_rows ORDER BY row_number ASC")
     if not raw_hrc2_rows:
@@ -3920,6 +4533,8 @@ def generate_skin_ke_hoach(
 
     eligible_coils = []
     source_hrc2_map = {}
+    unmatched_grades_map: dict[str, dict] = {}
+    seen_ngay_sx = []
 
     for idx, r in enumerate(raw_hrc2_rows):
         try:
@@ -3933,7 +4548,8 @@ def generate_skin_ke_hoach(
             continue
         if not is_empty_val(v.get("Đã chạy")):
             continue
-        po_thang = normalize_txt(v.get("PO Tháng"))
+        po_thang_raw = str(v.get("PO Tháng") or "").strip()
+        po_thang = normalize_txt(po_thang_raw)
         if po_thang.startswith("tạo po"):
             continue
         chi_dinh = normalize_txt(v.get("Chỉ định Skin"))
@@ -3944,164 +4560,277 @@ def generate_skin_ke_hoach(
         ngay_sx = parse_date_val(v.get("Ngày sản xuất"))
         if not ngay_sx:
             continue
-        date_key = dt_to_key(ngay_sx)
+        seen_ngay_sx.append(ngay_sx.date())
 
+        # Ngày sản xuất mới chưa được 2 ngày so với ngày hiện tại không lập lịch
+        if (today_date_only - ngay_sx.date()).days < 2:
+            continue
+
+        # Lọc theo khoảng 'Từ ngày SX' -> 'Đến ngày SX' nếu người dùng chọn
+        if prod_from_date_only and ngay_sx.date() < prod_from_date_only:
+            continue
+        if prod_to_date_only and ngay_sx.date() > prod_to_date_only:
+            continue
+
+        date_key = dt_to_key(ngay_sx)
         uu_tien = parse_priority_val(v.get("Ưu tiên đơn hàng"))
-        if uu_tien is not None:
-            if date_key >= priority_cutoff_key:
-                continue
-        else:
-            if date_key >= yesterday_key:
-                continue
+
+        mat_desc = str(v.get("Material Description") or "").strip()
+        mac_phoi = str(v.get("Mác phôi") or "").strip()
+        grade_rank, grade_group, extracted_grade = get_grade_group_rank(mac_phoi, mat_desc)
+        if grade_rank == 4 and extracted_grade:
+            if extracted_grade not in unmatched_grades_map:
+                unmatched_grades_map[extracted_grade] = {
+                    "grade": extracted_grade,
+                    "count": 0,
+                    "sample_coil": str(v.get("ID Cuộn Bó") or "").strip(),
+                }
+            unmatched_grades_map[extracted_grade]["count"] += 1
 
         thick = to_float_val(v.get("Thickness"))
+        if not math.isfinite(thick) or thick <= 0:
+            thick = parse_thickness_from_desc(mat_desc)
+        if thick > 12.0:
+            continue
+        if thick > 6.0 and allowed == "BOTH":
+            allowed = "SKIN4"
+        width_val = parse_width_val(mat_desc, v.get("Width"))
         ca = str(v.get("Ca") or "").strip()
         shift_prio = get_shift_priority(ca)
+
+        po_xu_ly_raw = str(v.get("PO Xử lý") or "").strip()
+        is_po_20600 = po_xu_ly_raw.startswith("20600") or po_thang_raw.startswith("20600")
 
         eligible_coils.append({
             "row_id": row_id,
             "source_index": idx,
             "idCuonBo": str(v.get("ID Cuộn Bó") or "").strip(),
-            "materialDescription": str(v.get("Material Description") or "").strip(),
+            "materialDescription": mat_desc,
+            "macPhoi": mac_phoi,
+            "gradeRank": grade_rank,
+            "gradeGroup": grade_group,
             "ngaySX": ngay_sx,
             "dateKey": date_key,
             "ca": ca,
             "shiftPriority": shift_prio,
             "thickness": thick,
+            "width": width_val,
             "chiDinhSkin": chi_dinh,
             "allowedSkin": allowed,
             "uuTienDonHang": uu_tien,
+            "isPo20600": is_po_20600,
         })
 
     if not eligible_coils:
-        raise ValueError("Không tìm thấy cuộn nào đủ điều kiện để lập kế hoạch Skin.")
+        if seen_ngay_sx:
+            min_d = min(seen_ngay_sx).strftime("%d/%m/%Y")
+            max_d = max(seen_ngay_sx).strftime("%d/%m/%Y")
+            ref_d = today_date_only.strftime("%d/%m/%Y")
+            raise ValueError(
+                f"Không tìm thấy cuộn nào đủ điều kiện (đã sản xuất >= 2 ngày so với Ngày lập KH {ref_d}). "
+                f"Dữ liệu chưa chạy trên SKIN_HRC2 hiện có Ngày SX từ {min_d} đến {max_d}."
+            )
+        raise ValueError("Không tìm thấy cuộn nào đủ điều kiện (đã sản xuất >= 2 ngày) để lập kế hoạch Skin.")
 
     def sort_coils_key(c):
         has_prio = 0 if c["uuTienDonHang"] is not None else 1
         prio_val = c["uuTienDonHang"] if c["uuTienDonHang"] is not None else 0
-        return (has_prio, prio_val, c["dateKey"], c["shiftPriority"], c["source_index"])
+        return (
+            c["dateKey"],                   # 1. Ngày sản xuất trước -> sau (06/11 hết mới sang 07/11)
+            1 if c["isPo20600"] else 0,     # 2. Trong cùng ngày: 20400 trước, hết 20400 đến 20600
+            has_prio,                       # 3. Ưu tiên đơn hàng (nếu có)
+            prio_val,
+            c["gradeRank"],                 # 4. Nhóm mác thép (MC -> LC -> HC -> OTHER)
+            c["shiftPriority"],             # 5. Ca sản xuất trước (Ca 1 -> Ca 2)
+            c["source_index"],
+        )
 
-    eligible_coils.sort(key=sort_coils_key)
+    def sort_inside_plan_key(c):
+        return (
+            c["dateKey"],                   # 1. Ngày sản xuất từ trước đến sau
+            1 if c["isPo20600"] else 0,     # 2. 20400 trước, 20600 sau trong cùng ngày
+            c["gradeRank"],                 # 3. Nhóm mác thép (MC -> LC -> HC)
+            c["shiftPriority"],             # 4. Ca 1 -> Ca 2
+            c["thickness"],
+            c["source_index"],
+        )
 
-    # Gom nhóm theo ca (ShiftGroup)
-    shift_groups = []
-    current_group = None
-    for coil in eligible_coils:
-        p_key = coil["uuTienDonHang"] if coil["uuTienDonHang"] is not None else -1
-        if (
-            not current_group or
-            current_group["priority_key"] != p_key or
-            current_group["date_key"] != coil["dateKey"] or
-            current_group["shift_priority"] != coil["shiftPriority"] or
-            normalize_txt(current_group["ca"]) != normalize_txt(coil["ca"])
-        ):
-            current_group = {
-                "priority_key": p_key,
-                "date_key": coil["dateKey"],
-                "shift_priority": coil["shiftPriority"],
-                "ca": coil["ca"],
-                "coils": []
-            }
-            shift_groups.append(current_group)
-        current_group["coils"].append(coil)
+    def allocate_and_build_plans(coils_list: list, is_20600: bool, s2_start_num: int, s4_start_num: int):
+        if not coils_list:
+            return [], [], [], [], s2_start_num, s4_start_num
 
-    # Phân bổ Skin 2 & Skin 4 cho từng ShiftGroup
-    def assign_shift_group(group):
-        coils = group["coils"]
-        total = len(coils)
-        if total == 0:
-            return
-        desired_skin2 = total // 2
-        desired_skin4 = total - desired_skin2
+        coils_list.sort(key=sort_coils_key)
 
-        hard_skin2 = [c for c in coils if c["allowedSkin"] == "SKIN2"]
-        hard_skin4 = [c for c in coils if c["allowedSkin"] == "SKIN4"]
-        flexible = [c for c in coils if c["allowedSkin"] == "BOTH"]
+        # Nhóm theo (Ngày sản xuất, Loại đơn 20400/20600, Ưu tiên đơn hàng, Nhóm mác thép)
+        # để chia đều 50/50 cho Skin 2 & Skin 4 theo từng nhóm mác thép & từng loại đơn trong ngày
+        groups = []
+        cur_grp = None
+        for coil in coils_list:
+            p_key = coil["uuTienDonHang"] if coil["uuTienDonHang"] is not None else -1
+            if (
+                not cur_grp
+                or cur_grp["priority_key"] != p_key
+                or cur_grp["date_key"] != coil["dateKey"]
+                or cur_grp["is_20600"] != coil["isPo20600"]
+                or cur_grp["grade_group"] != coil["gradeGroup"]
+            ):
+                cur_grp = {
+                    "priority_key": p_key,
+                    "date_key": coil["dateKey"],
+                    "is_20600": coil["isPo20600"],
+                    "grade_group": coil["gradeGroup"],
+                    "coils": [],
+                }
+                groups.append(cur_grp)
+            cur_grp["coils"].append(coil)
 
-        for c in hard_skin2:
-            c["assignedSkin"] = "SKIN2"
-        for c in hard_skin4:
-            c["assignedSkin"] = "SKIN4"
+        c2_list = []
+        c4_list = []
 
-        need_skin2 = max(0, desired_skin2 - len(hard_skin2))
-        need_skin4 = max(0, desired_skin4 - len(hard_skin4))
+        for g in groups:
+            g_coils = g["coils"]
+            total = len(g_coils)
+            if total == 0:
+                continue
+            desired_s2 = total // 2
+            desired_s4 = total - desired_s2
 
-        if len(hard_skin2) > desired_skin2:
-            need_skin2 = 0
-            need_skin4 = len(flexible)
-        if len(hard_skin4) > desired_skin4:
-            need_skin4 = 0
-            need_skin2 = len(flexible)
+            hard_s2 = [c for c in g_coils if c["allowedSkin"] == "SKIN2"]
+            hard_s4 = [c for c in g_coils if c["allowedSkin"] == "SKIN4"]
+            flex = [c for c in g_coils if c["allowedSkin"] == "BOTH"]
 
-        flex_count = len(flexible)
-        if need_skin2 + need_skin4 > flex_count:
-            deficit2 = max(0, desired_skin2 - len(hard_skin2))
-            deficit4 = max(0, desired_skin4 - len(hard_skin4))
-            if deficit2 >= deficit4:
-                need_skin2 = min(flex_count, deficit2)
-                need_skin4 = flex_count - need_skin2
-            else:
-                need_skin4 = min(flex_count, deficit4)
-                need_skin2 = flex_count - need_skin4
+            for c in hard_s2:
+                c["assignedSkin"] = "SKIN2"
+            for c in hard_s4:
+                c["assignedSkin"] = "SKIN4"
 
-        if need_skin2 + need_skin4 < flex_count:
-            remaining = flex_count - need_skin2 - need_skin4
-            need_skin4 += remaining
+            need_s2 = max(0, desired_s2 - len(hard_s2))
+            need_s4 = max(0, desired_s4 - len(hard_s4))
 
-        def flex_sort_key(c):
-            th = c["thickness"]
-            is_valid = 0 if (isinstance(th, (int, float)) and math.isfinite(th)) else 1
-            val = th if is_valid == 0 else 0
-            return (is_valid, val, c["source_index"])
+            if len(hard_s2) > desired_s2:
+                need_s2 = 0
+                need_s4 = len(flex)
+            if len(hard_s4) > desired_s4:
+                need_s4 = 0
+                need_s2 = len(flex)
 
-        flexible.sort(key=flex_sort_key)
-        for i, c in enumerate(flexible):
-            c["assignedSkin"] = "SKIN2" if i < need_skin2 else "SKIN4"
+            flex_cnt = len(flex)
+            if need_s2 + need_s4 > flex_cnt:
+                def2 = max(0, desired_s2 - len(hard_s2))
+                def4 = max(0, desired_s4 - len(hard_s4))
+                if def2 >= def4:
+                    need_s2 = min(flex_cnt, def2)
+                    need_s4 = flex_cnt - need_s2
+                else:
+                    need_s4 = min(flex_cnt, def4)
+                    need_s2 = flex_cnt - need_s4
 
-    normal_coils2 = []
-    normal_coils4 = []
+            if need_s2 + need_s4 < flex_cnt:
+                need_s4 += flex_cnt - need_s2 - need_s4
 
-    for g in shift_groups:
-        assign_shift_group(g)
-        for c in g["coils"]:
-            if c.get("assignedSkin") == "SKIN2":
-                normal_coils2.append(c)
-            elif c.get("assignedSkin") == "SKIN4":
-                normal_coils4.append(c)
+            # Hàng 1.2 - 6.0mm (BOTH): ưu tiên độ dày nhỏ vào Skin 2, độ dày lớn vào Skin 4
+            flex.sort(key=lambda c: (
+                c["thickness"] if c["thickness"] > 0 else 9999.0,
+                c["dateKey"],
+                c["source_index"],
+            ))
+            for i, c in enumerate(flex):
+                c["assignedSkin"] = "SKIN2" if i < need_s2 else "SKIN4"
 
-    normal_coils2.sort(key=sort_coils_key)
-    normal_coils4.sort(key=sort_coils_key)
+            for c in g_coils:
+                if c.get("assignedSkin") == "SKIN2":
+                    c2_list.append(c)
+                elif c.get("assignedSkin") == "SKIN4":
+                    c4_list.append(c)
 
-    normal_plans2 = []
-    s2_idx = 0
-    s2_num = 1
-    while len(normal_coils2) - s2_idx >= s2_target:
-        normal_plans2.append({
-            "id": f"PL#2_{s2_num:04d}",
-            "skin": "SKIN2",
-            "coils": normal_coils2[s2_idx : s2_idx + s2_target],
-            "isError": False,
-        })
-        s2_idx += s2_target
-        s2_num += 1
-    error_coils2 = normal_coils2[s2_idx:]
+        c2_list.sort(key=sort_coils_key)
+        c4_list.sort(key=sort_coils_key)
 
-    normal_plans4 = []
-    s4_idx = 0
-    s4_num = 1
-    while len(normal_coils4) - s4_idx >= s4_target:
-        normal_plans4.append({
-            "id": f"PL#4_{s4_num:04d}",
-            "skin": "SKIN4",
-            "coils": normal_coils4[s4_idx : s4_idx + s4_target],
-            "isError": False,
-        })
-        s4_idx += s4_target
-        s4_num += 1
-    error_coils4 = normal_coils4[s4_idx:]
+        def build_plans_prefer_group(pool: list, target: int, skin_name: str, is_po20600: bool, start_num: int):
+            plans = []
+            err_coils = []
+            remaining = list(pool)
+            idx_20600 = 1
 
-    error_coils2.sort(key=sort_coils_key)
-    error_coils4.sort(key=sort_coils_key)
+            # Duyệt từ trên xuống dưới theo thứ tự ngày SX:
+            # - 20400: lập đủ target cuộn/Plan theo từng nhóm mác thép (LC riêng, MC riêng, HC riêng) từ ngày trước -> ngày sau;
+            #   phần lẻ cuối cùng < target của nhóm mác thép đó đưa vào ERROR (không cắt ngang ngày trước hay trộn MC/LC)
+            # - 20600: ưu tiên lập Plan thuần cùng nhóm mác thép; chỉ chêm nhóm khác khi không còn nhóm nào đủ target
+            while remaining:
+                lead = remaining[0]
+                if lead["isPo20600"]:
+                    all_20600 = [c for c in remaining if c["isPo20600"]]
+                    lead_date = lead["dateKey"]
+                    chosen = None
+                    seen_groups = []
+                    for c in all_20600:
+                        if c["dateKey"] == lead_date and c["gradeGroup"] not in seen_groups:
+                            seen_groups.append(c["gradeGroup"])
+                    for grp in seen_groups:
+                        same_group = [c for c in all_20600 if c["gradeGroup"] == grp]
+                        if len(same_group) >= target:
+                            chosen = same_group[:target]
+                            break
+                    if chosen is None:
+                        other_groups = []
+                        for c in all_20600:
+                            if c["gradeGroup"] not in other_groups:
+                                other_groups.append(c["gradeGroup"])
+                        for grp in other_groups:
+                            same_group = [c for c in all_20600 if c["gradeGroup"] == grp]
+                            if len(same_group) >= target:
+                                chosen = same_group[:target]
+                                break
+                    if chosen is None:
+                        chosen = all_20600[:target]
+
+                    chosen_ids = {id(c) for c in chosen}
+                    remaining = [c for c in remaining if id(c) not in chosen_ids]
+
+                    chosen.sort(key=sort_inside_plan_key)
+                    prefix = "PL#2_20600" if skin_name == "SKIN2" else "PL#4_20600"
+                    plans.append({
+                        "id": f"{prefix}_{idx_20600:02d}",
+                        "skin": skin_name,
+                        "coils": chosen,
+                        "isError": False,
+                    })
+                    idx_20600 += 1
+                else:
+                    lead_group = lead["gradeGroup"]
+                    group_20400 = [
+                        c for c in remaining
+                        if not c["isPo20600"] and c["gradeGroup"] == lead_group
+                    ]
+                    if len(group_20400) >= target:
+                        chosen = group_20400[:target]
+                        chosen_ids = {id(c) for c in chosen}
+                        remaining = [c for c in remaining if id(c) not in chosen_ids]
+
+                        chosen.sort(key=sort_inside_plan_key)
+                        prefix = "PL#2" if skin_name == "SKIN2" else "PL#4"
+                        plans.append({
+                            "id": f"{prefix}_{start_num:04d}",
+                            "skin": skin_name,
+                            "coils": chosen,
+                            "isError": False,
+                        })
+                        start_num += 1
+                    else:
+                        chosen_ids = {id(c) for c in group_20400}
+                        remaining = [c for c in remaining if id(c) not in chosen_ids]
+                        err_coils.extend(group_20400)
+
+            err_coils.sort(key=sort_inside_plan_key)
+            return plans, err_coils, start_num
+
+        p2_plans, err2, s2_start_num = build_plans_prefer_group(c2_list, s2_target, "SKIN2", is_20600, s2_start_num)
+        p4_plans, err4, s4_start_num = build_plans_prefer_group(c4_list, s4_target, "SKIN4", is_20600, s4_start_num)
+
+        return p2_plans, p4_plans, err2, err4, s2_start_num, s4_start_num
+
+    # Lập ưu tiên theo ngày SX trước -> sau; trong cùng ngày: 20400 trước, 20600 sau; chia đều 2 Skin & gom theo nhóm mác thép
+    normal_plans2, normal_plans4, error_coils2, error_coils4, _, _ = allocate_and_build_plans(eligible_coils, False, 1, 1)
 
     error_plans2 = []
     error_plans4 = []
@@ -4233,6 +4962,11 @@ def generate_skin_ke_hoach(
     total_scheduled = len(coil_to_plan_map)
     total_plans = len(normal_plans2) + len(normal_plans4) + len(error_plans2) + len(error_plans4)
 
+    unmatched_grades_list = sorted(
+        unmatched_grades_map.values(),
+        key=lambda x: (-x["count"], x["grade"]),
+    )
+
     return {
         "success": True,
         "message": f"Đã lập kế hoạch thành công cho {total_scheduled:,} cuộn chia thành {total_plans} Plan ({len(normal_plans2)} Skin 2, {len(normal_plans4)} Skin 4)!",
@@ -4244,6 +4978,7 @@ def generate_skin_ke_hoach(
         "error_skin4_coils": len(error_coils4),
         "matrix_pairs": matrix_pairs,
         "plans_list": matrix_data.get("plans_list", []),
+        "unmatched_grades": unmatched_grades_list,
     }
 
 
@@ -4726,6 +5461,107 @@ def assign_skin_hrc2_ke_hoach_batch(coil_ids: list[str], ke_hoach_val: str = "",
         "matched_coil_ids": matched_ids,
         "message": f"Đã gán ngày Kế hoạch '{val_clean}' thành công cho {len(updated_items):,} cuộn trong sheet SKIN_HRC2!" if val_clean else f"Đã xóa Kế hoạch của {len(updated_items):,} cuộn!",
     }
+
+
+def _parse_weight_kg(raw_val: any) -> float:
+    if raw_val is None:
+        return 0.0
+    if isinstance(raw_val, (int, float)):
+        return float(raw_val) if math.isfinite(raw_val) else 0.0
+    s = str(raw_val).strip().replace(" ", "")
+    if not s:
+        return 0.0
+    # Xử lý định dạng '22,568.00' hoặc '22568'
+    if "," in s and "." in s:
+        s = s.replace(",", "")
+    elif "," in s:
+        parts = s.split(",")
+        if len(parts[-1]) == 3:
+            s = s.replace(",", "")
+        else:
+            s = s.replace(",", ".")
+    try:
+        v = float(s)
+        return v if math.isfinite(v) else 0.0
+    except Exception:
+        return 0.0
+
+
+def _parse_date_sort_key(date_str: str) -> str:
+    s = str(date_str or "").strip()
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+        except Exception:
+            continue
+    return s
+
+
+def get_skin_bao_cao_data() -> dict:
+    """Tổng hợp dữ liệu Báo cáo lượng SKIN từ SKIN_HRC2 theo định dạng PivotTable."""
+    rows = query_all("SELECT values_json FROM skin_hrc2_rows ORDER BY row_number ASC")
+    items = []
+    po_thang_set = set()
+    dvktkh_set = set()
+    da_chay_set = set()
+    ke_hoach_set = set()
+
+    for r in rows:
+        try:
+            v = json.loads(r.get("values_json") or "{}")
+        except Exception:
+            continue
+
+        po_thang = str(v.get("PO Tháng") or "").strip()
+        da_chay = str(v.get("Đã chạy") or "").strip()
+        ke_hoach = str(v.get("Kế hoạch") or "").strip()
+        dvktkh = str(v.get("DVKTKH") or "").strip()
+        ngay_sx = str(v.get("Ngày sản xuất") or "").strip()
+        ca = str(v.get("Ca") or "").strip()
+        id_cuon = str(v.get("ID Cuộn Bó") or "").strip()
+        po_xu_ly = str(v.get("PO Xử lý") or "").strip()
+        huong_xl = str(v.get("HƯỚNG XỬ LÝ_WEB") or "").strip().upper()
+        weight_kg = _parse_weight_kg(v.get("Khối lượng") if "Khối lượng" in v else v.get("Khối lượng"))
+
+        is_khach_dat = (
+            po_xu_ly.startswith("20600")
+            or po_thang.startswith("20600")
+            or huong_xl == "SKIN_CUST"
+        )
+        loai_xu_ly = "Khách đặt" if is_khach_dat else "Xử lý lỗi"
+
+        if po_thang:
+            po_thang_set.add(po_thang)
+        if dvktkh:
+            dvktkh_set.add(dvktkh)
+        if da_chay:
+            da_chay_set.add(da_chay)
+        if ke_hoach:
+            ke_hoach_set.add(ke_hoach)
+
+        items.append({
+            "po_thang": po_thang,
+            "da_chay": da_chay,
+            "ke_hoach": ke_hoach,
+            "dvktkh": dvktkh,
+            "ngay_sx": ngay_sx,
+            "date_sort_key": _parse_date_sort_key(ngay_sx),
+            "ca": ca,
+            "id_cuon": id_cuon,
+            "loai_xu_ly": loai_xu_ly,
+            "weight_kg": round(weight_kg, 2),
+        })
+
+    return {
+        "rows": items,
+        "filter_options": {
+            "po_thang": sorted(po_thang_set),
+            "dvktkh": sorted(dvktkh_set),
+            "da_chay": sorted(da_chay_set),
+            "ke_hoach": sorted(ke_hoach_set),
+        },
+    }
+
 
 
 

@@ -47,7 +47,7 @@ def import_qc_report(buffer: bytes | None = None, original_name: str = "Bao_Cao_
     now = datetime.utcnow().isoformat()
 
     # Delete existing rows for this report first
-    execute_write("DELETE FROM qcrows WHERE report_id = ?", (rid,))
+    execute_write("DELETE FROM qc_rows WHERE report_id = ?", (rid,))
 
     batch = []
     batch_size = 3000
@@ -155,7 +155,7 @@ def import_qc_report(buffer: bytes | None = None, original_name: str = "Bao_Cao_
 
                 if len(batch) >= batch_size:
                     conn.executemany("""
-                        INSERT INTO qcrows (id, report_id, sheet_name, row_number, order_id, tdc_code, coil_id, slab_id, product, steel_grade, standard, weight, values_json, created_at)
+                        INSERT INTO qc_rows (id, report_id, sheet_name, row_number, order_id, tdc_code, coil_id, slab_id, product, steel_grade, standard, weight, values_json, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, batch)
                     batch.clear()
@@ -177,7 +177,7 @@ def import_qc_report(buffer: bytes | None = None, original_name: str = "Bao_Cao_
 
         if batch:
             conn.executemany("""
-                INSERT INTO qcrows (id, report_id, sheet_name, row_number, order_id, tdc_code, coil_id, slab_id, product, steel_grade, standard, weight, values_json, created_at)
+                INSERT INTO qc_rows (id, report_id, sheet_name, row_number, order_id, tdc_code, coil_id, slab_id, product, steel_grade, standard, weight, values_json, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, batch)
             batch.clear()
@@ -196,8 +196,8 @@ def import_qc_report(buffer: bytes | None = None, original_name: str = "Bao_Cao_
     safe_filename = f"{filename}.{ext}" if not filename.endswith(f".{ext}") else filename
 
     execute_write("""
-        INSERT OR REPLACE INTO qcreports (id, filename, original_name, report_type, saved_at, bytes, rows_imported, sheets, created_at, updated_at)
-        VALUES (?, ?, ?, 'qc', ?, ?, ?, ?, coalesce((SELECT created_at FROM qcreports WHERE id = ?), ?), ?)
+        INSERT OR REPLACE INTO qc_reports (id, filename, original_name, report_type, saved_at, bytes, rows_imported, sheets, created_at, updated_at)
+        VALUES (?, ?, ?, 'qc', ?, ?, ?, ?, coalesce((SELECT created_at FROM qc_reports WHERE id = ?), ?), ?)
     """, (rid, safe_filename, original_name, now, file_size, total_imported, json.dumps(sheets, ensure_ascii=False), rid, now, now))
 
     return {
@@ -212,7 +212,7 @@ def import_qc_report(buffer: bytes | None = None, original_name: str = "Bao_Cao_
     }
 
 def get_report_rows(report_id: str, sheet_name: str | None = None, limit: int = 100, offset: int = 0, search: str = "") -> dict:
-    report = query_one("SELECT * FROM qcreports WHERE id = ?", (report_id,))
+    report = query_one("SELECT * FROM qc_reports WHERE id = ?", (report_id,))
     if not report:
         raise ValueError("Không tìm thấy báo cáo.")
 
@@ -233,10 +233,10 @@ def get_report_rows(report_id: str, sheet_name: str | None = None, limit: int = 
             where_clauses.append(f"({' OR '.join(token_clauses)})")
 
     where_str = " AND ".join(where_clauses)
-    count_row = query_one(f"SELECT count(*) as total FROM qcrows WHERE {where_str}", tuple(params))
+    count_row = query_one(f"SELECT count(*) as total FROM qc_rows WHERE {where_str}", tuple(params))
     total = count_row["total"] if count_row else 0
 
-    select_sql = f"SELECT id, row_number, sheet_name, values_json FROM qcrows WHERE {where_str} ORDER BY row_number ASC LIMIT ? OFFSET ?"
+    select_sql = f"SELECT id, row_number, sheet_name, values_json FROM qc_rows WHERE {where_str} ORDER BY row_number ASC LIMIT ? OFFSET ?"
     select_params = list(params) + [limit, offset]
     db_rows = query_all(select_sql, tuple(select_params))
 
@@ -285,7 +285,7 @@ def get_qc_column_values(report_id: str, field_name: str, sheet_name: str | None
 
     sql = f"""
         SELECT DISTINCT json_extract(values_json, ?) as val
-        FROM qcrows
+        FROM qc_rows
         WHERE {where_sql} AND val IS NOT NULL AND val != ''
         LIMIT 50000
     """
@@ -308,7 +308,7 @@ def get_qc_column_values_summary(report_id: str, sheet_name: str | None = None) 
     if cache_key in _column_values_cache:
         return _column_values_cache[cache_key]
 
-    sql = "SELECT values_json FROM qcrows WHERE report_id = ?"
+    sql = "SELECT values_json FROM qc_rows WHERE report_id = ?"
     params = [report_id]
     if sheet_name:
         sql += " AND sheet_name = ?"
@@ -349,7 +349,7 @@ def get_report_quality_summary(report_id: str) -> dict:
     if report_id in _quality_summary_cache:
         return _quality_summary_cache[report_id]
 
-    report = query_one("SELECT * FROM qcreports WHERE id = ?", (report_id,))
+    report = query_one("SELECT * FROM qc_reports WHERE id = ?", (report_id,))
     if not report:
         raise ValueError("Không tìm thấy báo cáo.")
 
@@ -389,7 +389,7 @@ def get_report_quality_summary(report_id: str) -> dict:
                 json_extract(values_json, '$."ID GỐC"'),
                 json_extract(values_json, '$."ID XỬ LÝ"'),
                 json_extract(values_json, '$."NGÀY SẢN XUẤT"')
-            FROM qcrows
+            FROM qc_rows
             WHERE report_id = ?
         ''', (report_id,))
 
@@ -456,7 +456,7 @@ def get_report_quality_summary(report_id: str) -> dict:
     # Persist in DB and memory cache
     try:
         execute_write(
-            "UPDATE qcreports SET quality_summary_json = ? WHERE id = ?",
+            "UPDATE qc_reports SET quality_summary_json = ? WHERE id = ?",
             (json.dumps(res, ensure_ascii=False), report_id)
         )
     except Exception:
@@ -468,8 +468,8 @@ def get_report_quality_summary(report_id: str) -> dict:
 def delete_all_qc_reports() -> dict:
     invalidate_quality_summary_cache()
     with get_db() as conn:
-        deleted_rows = conn.execute("DELETE FROM qcrows").rowcount
-        deleted_reports = conn.execute("DELETE FROM qcreports WHERE report_type != 'order-demand'").rowcount
+        deleted_rows = conn.execute("DELETE FROM qc_rows").rowcount
+        deleted_reports = conn.execute("DELETE FROM qc_reports WHERE report_type != 'order-demand'").rowcount
         try:
             conn.execute("DELETE FROM qc_export_jobs")
         except Exception:
@@ -485,14 +485,14 @@ def delete_all_qc_reports() -> dict:
 def delete_qc_report(report_id: str) -> dict:
     with get_db() as conn:
         rep = conn.execute(
-            "SELECT id, filename FROM qcreports WHERE id = ? AND report_type != 'order-demand'",
+            "SELECT id, filename FROM qc_reports WHERE id = ? AND report_type != 'order-demand'",
             (report_id,)
         ).fetchone()
         if not rep:
             raise ValueError("Không tìm thấy báo cáo QC cần xóa.")
 
-        del_rows = conn.execute("DELETE FROM qcrows WHERE report_id = ?", (report_id,)).rowcount
-        conn.execute("DELETE FROM qcreports WHERE id = ?", (report_id,))
+        del_rows = conn.execute("DELETE FROM qc_rows WHERE report_id = ?", (report_id,)).rowcount
+        conn.execute("DELETE FROM qc_reports WHERE id = ?", (report_id,))
 
     return {
         "success": True,

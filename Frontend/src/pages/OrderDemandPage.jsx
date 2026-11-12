@@ -37,6 +37,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Input } from '../components/ui/input';
 import { Select } from '../components/ui/select';
 import { Table } from '../components/ui/table';
+import { nf } from '../utils/ultils';
 
 const SHEET_NAME = 'Nhu cầu đơn hàng HRC';
 const PAGE_SIZE = 30000;
@@ -206,6 +207,7 @@ export default function OrderDemandPage() {
   const [filters, setFilters] = useState({});
   const [columnValues, setColumnValues] = useState({});
   const [sortState, setSortState] = useState(null); // { column: string, direction: 'asc' | 'desc' }
+  const [selectedRowIds, setSelectedRowIds] = useState(new Set());
   const [customLimit, setCustomLimit] = useState(PAGE_SIZE);
   const [limitInput, setLimitInput] = useState(String(PAGE_SIZE));
   const [loadingReports, setLoadingReports] = useState(true);
@@ -558,6 +560,41 @@ export default function OrderDemandPage() {
     }
   };
 
+  const handleCopySelectedDemandIds = () => {
+    if (!selectedRowIds.size) return;
+    const selected = sortedRows.filter((r) => selectedRowIds.has(r._id));
+    const ids = selected
+      .map((r) => String(r.values?.po || r.values?.tdc_code || r.values?.ma_khach_hang || '').trim())
+      .filter(Boolean);
+    if (!ids.length) {
+      setNotice('Không tìm thấy giá trị PO hoặc Mã đơn hàng trong các dòng đã chọn.');
+      return;
+    }
+    navigator.clipboard.writeText(ids.join('\n')).then(() => {
+      setNotice(`Đã sao chép ${nf(ids.length)} mã PO / Đơn hàng vào bộ nhớ tạm!`);
+    }).catch((err) => {
+      setNotice('Lỗi sao chép: ' + err.message);
+    });
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+        const activeTag = document.activeElement?.tagName?.toLowerCase();
+        if (activeTag === 'input' || activeTag === 'textarea') return;
+        const sel = window.getSelection()?.toString();
+        if (sel && sel.trim().length > 0) return;
+
+        if (selectedRowIds.size > 0) {
+          e.preventDefault();
+          handleCopySelectedDemandIds();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedRowIds, sortedRows]);
+
   const openDialog = (row = null, copy = false) => {
     setDialog({
       mode: copy ? 'copy' : row ? 'edit' : 'create',
@@ -848,6 +885,24 @@ export default function OrderDemandPage() {
               </Button>
             )}
 
+            {selectedRowIds.size > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-emerald-800 font-bold bg-emerald-100 px-2.5 py-2 rounded-xl border border-emerald-300 text-xs">
+                  ✓ Đã chọn: {nf(selectedRowIds.size)} dòng
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleCopySelectedDemandIds}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs cursor-pointer"
+                  title="Sao chép toàn bộ mã PO / Đơn hàng của các dòng đã chọn vào bộ nhớ tạm (Phím tắt: Ctrl+C)"
+                >
+                  <Copy size={14} />
+                  Sao chép PO / Đơn hàng ({selectedRowIds.size})
+                </Button>
+              </div>
+            )}
+
             <Button
               type="button"
               size="sm"
@@ -868,6 +923,24 @@ export default function OrderDemandPage() {
             <Table wrapperClassName="contents" className="w-full min-w-max border-collapse text-left text-xs">
               <thead className="sticky top-0 z-20 shadow-xs">
                 <tr>
+                  <th scope="col" className="sticky top-0 left-0 z-30 bg-slate-100 border-b border-r border-slate-200/80 px-2.5 py-3 text-center align-middle w-16 select-none shadow-xs">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={sortedRows.length > 0 && selectedRowIds.size === sortedRows.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedRowIds(new Set(sortedRows.map((r) => r._id)));
+                          } else {
+                            setSelectedRowIds(new Set());
+                          }
+                        }}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        title="Chọn tất cả các dòng"
+                      />
+                      <span className="text-[11px] font-bold text-slate-700">STT</span>
+                    </div>
+                  </th>
                   {columns.map((column) => (
                     <th
                       key={column.key}
@@ -898,14 +971,35 @@ export default function OrderDemandPage() {
               <tbody className="divide-y divide-slate-100">
                 {loadingRows ? (
                   <tr>
-                    <td colSpan={columns.length + 1} className="h-28 text-center text-xs font-medium text-slate-500">
+                    <td colSpan={columns.length + 2} className="h-28 text-center text-xs font-medium text-slate-500">
                       <span className="inline-flex items-center gap-2">
                         <LoaderCircle size={18} className="animate-spin text-indigo-600" /> Đang tải dữ liệu…
                       </span>
                     </td>
                   </tr>
-                ) : sortedRows.length ? sortedRows.map((row) => (
-                  <tr key={row._id} className="transition-colors hover:bg-indigo-50/30">
+                ) : sortedRows.length ? sortedRows.map((row, idx) => {
+                  const isChecked = selectedRowIds.has(row._id);
+                  return (
+                  <tr key={row._id} className={`transition-colors ${isChecked ? 'bg-indigo-50/70' : 'hover:bg-indigo-50/30'}`}>
+                    <td className="sticky left-0 z-10 px-2 py-2 text-center border-b border-r border-slate-100 bg-slate-50 select-none">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setSelectedRowIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(row._id)) next.delete(row._id);
+                              else next.add(row._id);
+                              return next;
+                            });
+                          }}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                        <span className="text-slate-500 font-mono text-[11px]">{idx + 1}</span>
+                      </div>
+                    </td>
                     {columns.map((column) => {
                       const val = row.values?.[column.key];
 
@@ -999,9 +1093,10 @@ export default function OrderDemandPage() {
                       </div>
                     </td>
                   </tr>
-                )) : (
+                );
+              }) : (
                   <tr>
-                    <td colSpan={columns.length + 1} className="h-28 text-center text-xs font-medium text-slate-500">
+                    <td colSpan={columns.length + 2} className="h-28 text-center text-xs font-medium text-slate-500">
                       {selectedReport ? 'Không có dòng dữ liệu phù hợp với bộ lọc.' : 'Chưa có báo cáo chứa sheet nhu cầu đơn hàng.'}
                     </td>
                   </tr>

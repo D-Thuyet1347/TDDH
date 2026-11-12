@@ -1,4 +1,5 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
+import { Copy, Pencil } from 'lucide-react';
 import ExcelFilterDropdown from './ExcelFilterDropdown';
 import { nf } from '../utils/ultils';
 
@@ -28,11 +29,33 @@ export default function SkinVirtualTable({
   onCancelEdit,
   onRowClick,
   renderCustomCell,
+  onCopySelectedIds,
+  idColumnName,
+  onEditRow,
 }) {
   const containerRef = useRef(null);
   const cellInputRef = useRef(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(600);
+
+  // Shortcut Ctrl+C để copy cột ID của các dòng được tick chọn
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+        const activeTag = document.activeElement?.tagName?.toLowerCase();
+        if (activeTag === 'input' || activeTag === 'textarea') return;
+        const sel = window.getSelection()?.toString();
+        if (sel && sel.trim().length > 0) return;
+
+        if (selectedRowIds && selectedRowIds.size > 0 && onCopySelectedIds) {
+          e.preventDefault();
+          onCopySelectedIds();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedRowIds, onCopySelectedIds]);
 
   // Focus cell input when editing
   useEffect(() => {
@@ -254,6 +277,19 @@ export default function SkinVirtualTable({
                       className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                     />
                     <span className="min-w-6 text-right font-mono">{originalIdx + 1}</span>
+                    {onEditRow && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditRow(row);
+                        }}
+                        className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                        title="Mở form chỉnh sửa dòng này"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    )}
                   </div>
                 </td>
                 {columns.map((col, cIdx) => {
@@ -332,9 +368,22 @@ export default function SkinVirtualTable({
             )}
           </span>
           {selectedRowIds?.size > 0 && (
-            <span className="text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-300">
-              ✓ Đã chọn: {nf(selectedRowIds.size)} dòng
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-300">
+                ✓ Đã chọn: {nf(selectedRowIds.size)} dòng
+              </span>
+              {onCopySelectedIds && (
+                <button
+                  type="button"
+                  onClick={() => onCopySelectedIds()}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-2xs transition-colors cursor-pointer"
+                  title={`Sao chép toàn bộ mã trong cột ${idColumnName || 'ID'} của các dòng đã chọn vào Clipboard (Phím tắt: Ctrl+C)`}
+                >
+                  <Copy size={12} />
+                  Sao chép {idColumnName ? `cột ${idColumnName}` : 'cột ID'} ({nf(selectedRowIds.size)})
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>

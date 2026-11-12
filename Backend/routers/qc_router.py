@@ -168,20 +168,20 @@ async def download_export_file_by_name(file_name: str):
 
 @router.get("/dashboard-summary")
 async def get_dashboard_summary():
-    row_count = query_one("SELECT count(*) as cnt FROM qcrows")
+    row_count = query_one("SELECT count(*) as cnt FROM qc_rows")
     total_qc = row_count["cnt"] if row_count else 0
 
     rep_stats = query_one("""
         SELECT count(*) as reports_cnt,
                coalesce(sum(bytes), 0) as total_bytes,
                coalesce(sum(rows_imported), 0) as total_imported
-        FROM qcreports
+        FROM qc_reports
         WHERE report_type != 'order-demand'
     """)
     total_reports = rep_stats["reports_cnt"] if rep_stats else 0
     total_bytes = rep_stats["total_bytes"] if rep_stats else 0
 
-    reports = query_all("SELECT sheets FROM qcreports WHERE report_type != 'order-demand'")
+    reports = query_all("SELECT sheets FROM qc_reports WHERE report_type != 'order-demand'")
     total_sheets = 0
     for r in reports:
         try:
@@ -190,7 +190,7 @@ async def get_dashboard_summary():
         except Exception:
             pass
 
-    latest_report = query_one("SELECT id, filename, saved_at, rows_imported FROM qcreports WHERE report_type != 'order-demand' ORDER BY saved_at DESC LIMIT 1")
+    latest_report = query_one("SELECT id, filename, saved_at, rows_imported FROM qc_reports WHERE report_type != 'order-demand' ORDER BY saved_at DESC LIMIT 1")
 
     return {
         "reports": total_reports,
@@ -211,7 +211,7 @@ async def get_dashboard_summary():
 @router.get("/jobs")
 async def list_jobs():
     export_jobs = get_export_jobs()
-    reports = query_all("SELECT id, filename, saved_at FROM qcreports WHERE report_type != 'order-demand' ORDER BY saved_at DESC LIMIT 100")
+    reports = query_all("SELECT id, filename, saved_at FROM qc_reports WHERE report_type != 'order-demand' ORDER BY saved_at DESC LIMIT 100")
     exported_ids = {j.get("report_id") for j in export_jobs if j.get("report_id")}
     imported_jobs = [
         {
@@ -237,10 +237,10 @@ async def list_reports(limit: int = 20, offset: int = 0, search: str = ""):
             where += f" AND ({' OR '.join(token_clauses)})"
             params.extend([f"%{t}%" for t in tokens])
 
-    count_row = query_one(f"SELECT count(*) as cnt FROM qcreports {where}", tuple(params))
+    count_row = query_one(f"SELECT count(*) as cnt FROM qc_reports {where}", tuple(params))
     total = count_row["cnt"] if count_row else 0
 
-    select_sql = f"SELECT * FROM qcreports {where} ORDER BY saved_at DESC LIMIT ? OFFSET ?"
+    select_sql = f"SELECT * FROM qc_reports {where} ORDER BY saved_at DESC LIMIT ? OFFSET ?"
     select_params = list(params) + [limit, offset]
     db_rows = query_all(select_sql, tuple(select_params))
 
@@ -275,7 +275,7 @@ async def upload_report(file: UploadFile = File(...)):
 
 @router.get("/reports/{report_id}/file")
 async def download_report_file(report_id: str):
-    report = query_one("SELECT filename FROM qcreports WHERE id = ?", (report_id,))
+    report = query_one("SELECT filename FROM qc_reports WHERE id = ?", (report_id,))
     if not report:
         raise HTTPException(status_code=404, detail="Không tìm thấy báo cáo.")
 
